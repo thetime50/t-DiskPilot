@@ -333,6 +333,15 @@ export default function ScanTab({ initialScan }) {
           </button>
           <button
             type="button"
+            className="btn secondary"
+            title="导出报告"
+            disabled={scanning}
+            onClick={exportReportMd}
+          >
+            导出
+          </button>
+          <button
+            type="button"
             className="btn secondary icon-btn"
             title="清理缓存历史"
             aria-label="清理缓存历史"
@@ -342,15 +351,6 @@ export default function ScanTab({ initialScan }) {
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
               <path d="M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
-          </button>
-          <button
-            type="button"
-            className="btn secondary"
-            title="导出报告"
-            disabled={scanning}
-            onClick={exportReportMd}
-          >
-            导出
           </button>
         </div>
         <div className="flex flex-wrap gap-2.5 items-center mb-3">

@@ -11,3 +11,5 @@ src-tauri/gen/
 # local scan cache (single file, regenerated)
 data/last-scan.json
 data/*.tmp
+
+/back.md

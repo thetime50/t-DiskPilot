@@ -12,6 +12,7 @@ export default function OptimizeTab() {
   const [showConfirm, setShowConfirm] = useState(false);
   const [confirmToken, setConfirmToken] = useState('');
   const [log, setLog] = useState('');
+  const [running, setRunning] = useState(false);
 
   const { progress: loadProgress, start: startLoadProgress, stop: stopLoadProgress } = useLoadProgress('/api/optimize/checklist/progress');
   const { freshness, refreshFreshness, canAct, stale } = useScanFreshness();
@@ -59,22 +60,26 @@ export default function OptimizeTab() {
   }
 
   async function doOpt() {
+    if (running) return;
     if (!canAct) return alert(freshness?.reason || '扫描已过期，请先重新扫描');
     if (confirmToken.trim() !== 'CONFIRM') return alert('请输入 CONFIRM');
+    const ids = [...selected];
+    if (!ids.length) return alert('请先勾选');
+    setRunning(true);
+    setLog('正在执行优化…（请稍候）');
     try {
-      setLog(
-        formatLog(
-          await api('/api/optimize/execute', {
-            method: 'POST',
-            body: JSON.stringify({ ids: [...selected], dryRun: false, confirmToken: 'CONFIRM' }),
-          })
-        )
-      );
+      const result = await api('/api/optimize/execute', {
+        method: 'POST',
+        body: JSON.stringify({ ids, dryRun: false, confirmToken: 'CONFIRM' }),
+      });
+      setLog(formatLog(result));
       setShowConfirm(false);
       setConfirmToken('');
-      refresh(true);
+      await refresh(true);
     } catch (err) {
       setLog(formatLog(err.data || err.message));
+    } finally {
+      setRunning(false);
     }
   }
 
@@ -124,13 +129,13 @@ export default function OptimizeTab() {
         ))}
 
       <div className="sticky bottom-1.5 flex flex-wrap gap-2.5 items-center py-1.5 px-3 bg-[rgba(26,35,50,0.95)] border border-border rounded-xl">
-        <button type="button" className="btn" onClick={dryRun} disabled={!canAct}>
+        <button type="button" className="btn" onClick={dryRun} disabled={!canAct || running}>
           预演（dry-run）
         </button>
         <button
           type="button"
           className="btn ok"
-          disabled={!canAct}
+          disabled={!canAct || running}
           onClick={() => {
             if (![...selected].length) return alert('请先勾选');
             setShowConfirm(true);
@@ -153,13 +158,15 @@ export default function OptimizeTab() {
               value={confirmToken}
               onChange={(e) => setConfirmToken(e.target.value)}
             />
-            <button type="button" className="btn danger" onClick={doOpt} disabled={!canAct}>
-              执行优化
+            <button type="button" className="btn danger" onClick={doOpt} disabled={!canAct || running}>
+              {running ? '执行中…' : '执行优化'}
             </button>
             <button
               type="button"
               className="btn secondary"
+              disabled={running}
               onClick={() => {
+                if (running) return;
                 setShowConfirm(false);
                 setConfirmToken('');
               }}
@@ -167,6 +174,11 @@ export default function OptimizeTab() {
               取消
             </button>
           </div>
+        </div>
+      )}
+      {running && (
+        <div className="scan-freshness mt-3">
+          优化执行中，请勿关闭页面…
         </div>
       )}
       {log ? <pre className="log-box mt-3">{log}</pre> : null}

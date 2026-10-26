@@ -4,6 +4,16 @@
 
 **不会自动执行**破坏性或改配置操作；一律「生成计划 → 勾选 → 输入 CONFIRM → 执行 → 写日志」。
 
+## 界面预览
+
+![扫描](docs/screenshots/scan.png)
+
+![清理](docs/screenshots/clean.png)
+
+![优化](docs/screenshots/optimize.png)
+
+![建议](docs/screenshots/suggest.png)
+
 ## 技术栈
 
 | 层 | 技术 |
@@ -26,6 +36,8 @@ cd <repo-root>
 npm install
 npm run dev
 ```
+
+也可用根目录 **`start.cmd`**：双击弹出命令行窗口，自动 `npm install`（若缺依赖）后执行 `npm run dev`；关闭窗口即停止服务。
 
 - API：http://127.0.0.1:3789  
 - UI（Vite）：http://127.0.0.1:5173 （`/api` 已代理到 3789）
@@ -73,15 +85,30 @@ cargo --version
 
 图标：把 PNG/ICO 放到 `src-tauri/icons/`（可从同目录 SquirrelDisk 的 icons 复制）。
 
+## 特性
+
+- **扫描结果持久化与缓存**：完成后写入 `data/last-scan.json`；再次打开扫描页会先展示「来自缓存 · 扫描时间」的排行与热点，无需重扫。
+- **按目标盘过滤热点**：热点规则仅测量落在所选盘符上的路径；扫 G 盘时不会再跑 C 盘的 npm-cache 等规则。
+- **点扫描即清缓存**：开始新扫描时清除 `last-scan.json` 与清理/优化/建议的内存缓存，界面同步清空旧排行与热点。
+- **LoadingBlock 进度**：清理 / 优化 / 建议加载清单时显示进度块（`useLoadProgress`），避免空白等待。
+- **Tab 保活**：各页用 `hidden` 切换，组件状态不卸载；勾选、列表与日志在切 Tab 后仍保留。
+- **预演 sticky 底栏**：清理 / 优化页底部「预演（dry-run）」与「确认执行」贴底悬浮，滚动时仍可操作。
+- **导出 Markdown**：扫描页可将结果导出为 MD 报告。
+- **24 小时新鲜度锁**：扫描超过约 24 小时后，清理 / 优化的真实执行会灰掉并拦截；建议页不受此锁。可通过重新扫描恢复。
+- **清单内存缓存与刷新**：清理 / 优化 / 建议分析完后缓存在服务端内存；再进该页直接返回缓存；点「刷新」带 `?refresh=1` 强制重算。真实执行成功后清对应缓存。
+- **隔离区**：默认 `D:\t-DiskPilot-quarantine\`；非低风险项先移入隔离区，可还原或永久删除。
+- **CONFIRM 流程**：预演不改磁盘；真实执行必须输入字面量 `CONFIRM`。
+- **一键启动**：`start.cmd` 弹出 shell 窗口跑 API + Vite。
+
 ## 功能
 
 | 模块 | 说明 |
 |------|------|
-| **扫描** | 后台 Node 流式遍历；进度条（按已扫容量）、面包屑（过长 first5…last5 换行）、当前位置与用时；可取消；排行用 d3 条形图 |
-| **清理** | 逐条勾选；低风险确认后可直接删；其余先入隔离区 |
-| **优化** | 传递优化缓存、缩略图、回收站、存储感知等；均需确认 |
-| **建议** | 如把 Pip/npm/Gradle/Docker 缓存迁到 D 盘；应用仍需 CONFIRM |
-| **隔离区** | 默认 `D:\\t-DiskPilot-quarantine\\`；可还原或永久删除 |
+| **扫描** | 后台 Node 流式遍历；进度条（按已扫容量）、面包屑（过长 first5…last5 换行）、当前位置与用时；可取消；排行用 d3 条形图；支持盘符 / 任意路径 / 仅热点；结果可导出 MD |
+| **清理** | 逐条勾选；低风险确认后可直接删；其余先入隔离区；支持预演与 CONFIRM；受扫描新鲜度约束 |
+| **优化** | 传递优化缓存、缩略图、回收站、存储感知等；均需确认；同样支持预演与 24h 锁 |
+| **建议** | 如 Docker/Android SDK 迁移指导、Pip/npm 等缓存迁盘；部分仅指导无自动应用；应用类仍需 CONFIRM |
+| **隔离区** | 查看隔离项；可还原或永久删除 |
 
 ## 确认与隔离策略
 
@@ -120,6 +147,8 @@ src/              React 前端（Vite）
 src-tauri/        Tauri 2 桌面壳脚手架
 legacy-public/    旧版 vanilla UI（回退）
 dist/             vite build 产物
+docs/screenshots/ 界面截图（README 预览）
+start.cmd         双击启动（弹出 shell）
 ```
 
 ## 安全说明
