@@ -95,37 +95,57 @@
     });
   }
 
-  function renderRanking(ranking) {
+  function renderRanking(ranking, scanMeta) {
     const wrap = $('#rankingWrap');
     if (!ranking) {
       wrap.textContent = '无数据';
       return;
     }
     if (ranking.error) {
-      wrap.innerHTML = `<span class="muted">错误：${escapeHtml(ranking.error)}</span>`;
+      wrap.innerHTML = '<span class="muted">错误：' + escapeHtml(ranking.error) + '</span>';
       return;
     }
     const rows = (ranking.children || [])
       .slice(0, 40)
       .map(
-        (c) => `<tr>
-        <td>${c.isDir ? '📁' : '📄'} ${escapeHtml(c.name)}</td>
-        <td>${c.sizeLabel}</td>
-        <td class="mono">${escapeHtml(c.path)}</td>
-      </tr>`
+        (c) =>
+          '<tr>' +
+          '<td>' + (c.isDir ? '📁' : '📄') + ' ' + escapeHtml(c.name) + '</td>' +
+          '<td>' + (c.sizeLabel || '—') + '</td>' +
+          '<td class="mono duration-cell">' + (c.durationLabel || '—') + '</td>' +
+          '<td class="mono">' + escapeHtml(c.path) + '</td>' +
+          '</tr>'
       )
       .join('');
     const partial = ranking.partial ? ' <span class="tag medium">部分结果</span>' : '';
-    wrap.innerHTML = `
-      <p class="muted">路径：<span class="mono">${escapeHtml(ranking.path || '')}</span>
-      · 合计 ${ranking.totalLabel || '—'}${partial}</p>
-      <table>
-        <thead><tr><th>名称</th><th>大小</th><th>路径</th></tr></thead>
-        <tbody>${rows || '<tr><td colspan="3">空</td></tr>'}</tbody>
-      </table>`;
+    const rankingDur =
+      ranking.durationLabel ||
+      (scanMeta && scanMeta.rankingDurationLabel) ||
+      '—';
+    const totalDur =
+      (scanMeta && scanMeta.durationLabel) ||
+      ranking.durationLabel ||
+      '—';
+    const durLine =
+      totalDur !== rankingDur && scanMeta && scanMeta.durationLabel
+        ? ' · 扫描用时 ' + totalDur + '（排行 ' + rankingDur + '）'
+        : ' · 扫描用时 ' + (rankingDur !== '—' ? rankingDur : totalDur);
+    wrap.innerHTML =
+      '<p class="muted">路径：<span class="mono">' +
+      escapeHtml(ranking.path || '') +
+      '</span> · 合计 ' +
+      (ranking.totalLabel || '—') +
+      durLine +
+      partial +
+      '</p>' +
+      '<table>' +
+      '<thead><tr><th>名称</th><th>大小</th><th>用时</th><th>路径</th></tr></thead>' +
+      '<tbody>' +
+      (rows || '<tr><td colspan="4">空</td></tr>') +
+      '</tbody></table>';
   }
 
-  function renderHotspots(hotspots) {
+function renderHotspots(hotspots) {
     const wrap = $('#hotspotWrap');
     if (!hotspots) {
       wrap.textContent = '无数据';
@@ -175,7 +195,8 @@
       bar.style.width = `${Math.min(100, pct)}%`;
       $('#scanPercentText').textContent = `${pct}%`;
     }
-    $('#scanBytesText').textContent = `已扫描 ${p.scannedLabel || '—'} / ${p.totalLabel || '—'} · 文件 ${p.fileCount || 0} · 目录 ${p.dirCount || 0}`;
+    const durPart = p.durationLabel ? ` · 用时 ${p.durationLabel}` : '';
+    $('#scanBytesText').textContent = `已扫描 ${p.scannedLabel || '—'} / ${p.totalLabel || '—'} · 文件 ${p.fileCount || 0} · 目录 ${p.dirCount || 0}${durPart}`;
     const bc = p.breadcrumb || '—';
     const cp = p.currentPath || '—';
     const bcEl = $('#scanBreadcrumb');
@@ -230,7 +251,7 @@
         const result = full.result;
         if (result) {
           if (result.drives) renderDriveCards(result.drives);
-          if (result.rootRanking) renderRanking(result.rootRanking);
+          if (result.rootRanking) renderRanking(result.rootRanking, result);
           if (result.hotspots) renderHotspots(result.hotspots);
           else if (p.status === 'cancelled') {
             $('#hotspotWrap').textContent = '已取消，热点未测完';

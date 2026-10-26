@@ -5,6 +5,17 @@ const scan = require('./scan');
 const { walkRank } = require('./walker');
 const { formatBytes } = require('./scan');
 
+function formatDuration(ms) {
+  if (ms == null || Number.isNaN(ms) || ms < 0) return '—';
+  const n = Math.round(Number(ms));
+  if (n < 1000) return n + ' ms';
+  const s = n / 1000;
+  if (s < 60) return s.toFixed(1) + ' s';
+  const m = Math.floor(s / 60);
+  const rem = Math.round(s - m * 60);
+  return m + 'm ' + rem + 's';
+}
+
 /** In-memory scan job (single active job). */
 const job = {
   id: null,
@@ -22,6 +33,7 @@ const job = {
   result: null,
   startedAt: null,
   finishedAt: null,
+  durationMs: null,
   _cancel: false,
   _seq: 0,
 };
@@ -44,6 +56,8 @@ function snapshot() {
     error: job.error,
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,
+    durationMs: job.durationMs,
+    durationLabel: formatDuration(job.durationMs),
     hasResult: !!job.result,
   };
 }
@@ -84,6 +98,7 @@ async function startJob({ drive, targetPath, includeHotspots = true } = {}) {
   job.result = null;
   job.startedAt = new Date().toISOString();
   job.finishedAt = null;
+  job.durationMs = null;
   job._cancel = false;
 
   // Fire and forget
@@ -145,6 +160,9 @@ async function runJob(id, { drive, targetPath, includeHotspots }) {
     if (rankingRaw.cancelled || job._cancel) {
       job.status = 'cancelled';
       job.finishedAt = new Date().toISOString();
+      job.durationMs = rankingRaw.durationMs != null
+        ? rankingRaw.durationMs
+        : (job.startedAt ? Date.now() - Date.parse(job.startedAt) : null);
       job.percent = job.totalBytes
         ? Math.min(100, Math.round((job.scannedBytes / job.totalBytes) * 1000) / 10)
         : 0;
@@ -157,12 +175,18 @@ async function runJob(id, { drive, targetPath, includeHotspots }) {
           path: rankingRaw.path,
           total: rankingRaw.total,
           totalLabel: formatBytes(rankingRaw.total),
+          durationMs: rankingRaw.durationMs != null ? rankingRaw.durationMs : job.durationMs,
+          durationLabel: formatDuration(
+            rankingRaw.durationMs != null ? rankingRaw.durationMs : job.durationMs
+          ),
           children: (rankingRaw.children || []).map((c) => ({
             name: c.name,
             path: c.path,
             isDir: c.isDir,
             size: c.size,
             sizeLabel: formatBytes(c.size),
+            durationMs: c.durationMs != null ? c.durationMs : null,
+            durationLabel: formatDuration(c.durationMs),
           })),
           partial: true,
         },
@@ -176,12 +200,16 @@ async function runJob(id, { drive, targetPath, includeHotspots }) {
       path: rankingRaw.path,
       total: rankingRaw.total,
       totalLabel: formatBytes(rankingRaw.total),
+      durationMs: rankingRaw.durationMs != null ? rankingRaw.durationMs : null,
+      durationLabel: formatDuration(rankingRaw.durationMs),
       children: (rankingRaw.children || []).map((c) => ({
         name: c.name,
         path: c.path,
         isDir: !!c.isDir,
         size: c.size,
         sizeLabel: formatBytes(c.size),
+        durationMs: c.durationMs != null ? c.durationMs : null,
+        durationLabel: formatDuration(c.durationMs),
       })),
       fileCount: rankingRaw.fileCount,
       dirCount: rankingRaw.dirCount,
@@ -212,9 +240,16 @@ async function runJob(id, { drive, targetPath, includeHotspots }) {
       job.percent = 100;
     }
     job.finishedAt = new Date().toISOString();
+    job.durationMs = job.startedAt
+      ? Date.now() - Date.parse(job.startedAt)
+      : rankingRaw.durationMs;
     job.scannedBytes = rankingRaw.scannedBytes || rankingRaw.total;
     job.result = {
       scannedAt: job.finishedAt,
+      durationMs: job.durationMs,
+      durationLabel: formatDuration(job.durationMs),
+      rankingDurationMs: ranking.durationMs,
+      rankingDurationLabel: ranking.durationLabel,
       drive: driveInfo,
       drives,
       rootRanking: ranking,
@@ -226,6 +261,9 @@ async function runJob(id, { drive, targetPath, includeHotspots }) {
     job.status = 'error';
     job.error = String(err.message || err);
     job.finishedAt = new Date().toISOString();
+    job.durationMs = job.startedAt
+      ? Date.now() - Date.parse(job.startedAt)
+      : null;
   }
 }
 

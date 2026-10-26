@@ -96,8 +96,14 @@ input[type="text"], select {
 .breadcrumb {
   margin-top: 10px; padding: 8px 10px; background: #0b1220;
   border: 1px solid var(--border); border-radius: 8px;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-size: 0.85rem; color: #93c5fd;
+  min-height: 3.2em;
+  max-height: 3.2em;
+  overflow: hidden;
+  line-height: 1.35;
+  box-sizing: border-box;
 }
 .current-path {
   margin-top: 6px; padding: 6px 10px;
@@ -152,3 +158,5 @@ pre.log {
 .guide { background: #0b1220; border-left: 3px solid var(--accent); padding: 10px 12px; margin-top: 8px; border-radius: 0 8px 8px 0; }
 .guide ol { margin: 6px 0 0; padding-left: 18px; color: var(--muted); }
 .guide code { background: #1a2332; padding: 1px 5px; border-radius: 4px; }
+
+.duration-cell { white-space: nowrap; color: var(--muted); text-align: right; }

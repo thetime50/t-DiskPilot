@@ -30,7 +30,8 @@ function formatBreadcrumb(stack) {
     .map((s) =>
       s == null ? '...' : `${shortName(s.name)}(${s.index}/${s.count})`
     )
-    .join('/');
+    .join('/')
+    .replace('.../', '...\n');
 }
 
 /**
@@ -58,8 +59,9 @@ async function walkRank(root, options = {}) {
   let currentPath = absRoot;
   let breadcrumb = '';
 
-  const topChildren = []; // { name, path, isDir, size }
+  const topChildren = []; // { name, path, isDir, size, durationMs }
   const topIndex = new Map(); // name -> index in topChildren
+  const walkStartedAt = Date.now();
 
   function emit(force = false) {
     if (!onProgress) return;
@@ -158,7 +160,9 @@ async function walkRank(root, options = {}) {
           { name: ent.name, index: i + 1, count },
         ];
         const childTopKey = topKey != null ? topKey : ent.name;
+        const childStartedAt = Date.now();
         const sub = await walkDir(full, childStack, childTopKey);
+        const childDurationMs = Date.now() - childStartedAt;
         dirSize += sub;
 
         // If this is a direct child of root, record it
@@ -166,6 +170,7 @@ async function walkRank(root, options = {}) {
           const idx = topIndex.get(ent.name);
           if (idx != null) {
             topChildren[idx].size = sub;
+            topChildren[idx].durationMs = childDurationMs;
           } else {
             topIndex.set(ent.name, topChildren.length);
             topChildren.push({
@@ -173,6 +178,7 @@ async function walkRank(root, options = {}) {
               path: full,
               isDir: true,
               size: sub,
+              durationMs: childDurationMs,
             });
           }
         }
@@ -203,6 +209,7 @@ async function walkRank(root, options = {}) {
             path: full,
             isDir: false,
             size,
+            durationMs: 0,
           });
         } else if (topKey != null) {
           // size attributed via parent walk return value
@@ -226,6 +233,8 @@ async function walkRank(root, options = {}) {
 
   emit(true);
 
+  const durationMs = Date.now() - walkStartedAt;
+
   return {
     path: absRoot,
     total: rootSize,
@@ -233,6 +242,7 @@ async function walkRank(root, options = {}) {
     fileCount,
     dirCount,
     scannedBytes,
+    durationMs,
     cancelled,
   };
 }
