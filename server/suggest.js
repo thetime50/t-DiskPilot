@@ -4,6 +4,7 @@ const fs = require('fs');
 const path = require('path');
 const os = require('os');
 const { formatBytes, dirSizeBytes } = require('./scan');
+const docker = require('./docker');
 const logger = require('./logger');
 
 const HOME = os.homedir();
@@ -133,22 +134,118 @@ function suggestCatalog() {
       },
       applyAction: null,
     },
+    {
+      id: 'sug-docker-prune',
+      label: 'Docker 未使用镜像/构建缓存可清理',
+      category: 'review',
+      relatedPath: null,
+      risk: 'medium',
+      guidance: {
+        summary: '用 docker system df 查看占用；清理前请确认没有需要的未运行容器/镜像',
+        steps: [
+          '查看: docker system df',
+          '仅构建缓存: docker builder prune -f（可在「清理」页勾选确认）',
+          '仅 dangling 镜像: docker image prune -f',
+          '所有未使用镜像: docker image prune -a -f（更激进，需确认）',
+          '勿加 --volumes，除非你明确要删匿名卷',
+        ],
+        commands: [
+          'docker system df',
+          'docker builder prune -f',
+          'docker image prune -f',
+          'docker image prune -a -f',
+        ],
+      },
+      applyAction: null,
+      dockerRelated: true,
+    },
+    {
+      id: 'sug-docker-relocate',
+      label: 'Docker 数据盘迁移（WSL vhdx / DataFolder）',
+      category: 'relocate',
+      relatedPath: null,
+      risk: 'high',
+      guidance: {
+        summary: 'Docker Desktop 数据常在 WSL ext4.vhdx；可迁到空间更大的盘，不要直接删 vhdx',
+        steps: [
+          'Docker Desktop → Settings → Resources → Advanced / Disk image location（或 WSL 数据位置）',
+          '也可: wsl --shutdown 后，用 wsl --manage <distro> --move <目标目录>（Windows 11）',
+          '本机若已迁到其他盘，建议页会显示检测到的 vhdx 路径与大小',
+          '迁移完成后可用「清理」页 prune 未使用镜像进一步回收',
+        ],
+        commands: [
+          'wsl -l -v',
+          'docker system df',
+        ],
+      },
+      applyAction: null,
+      dockerRelated: true,
+    },
+
   ];
 }
 
 async function buildSuggestions() {
   const items = suggestCatalog();
   const out = [];
+  let dockerInfo = null;
+  try {
+    dockerInfo = await docker.collectDockerHotspots({
+      dirSizeBytes,
+      formatBytes,
+    });
+  } catch (_) {
+    dockerInfo = null;
+  }
+
   for (const item of items) {
-    const exists = item.relatedPath ? fs.existsSync(item.relatedPath) : false;
+    let exists = item.relatedPath ? fs.existsSync(item.relatedPath) : false;
     let size = 0;
-    if (exists) size = await dirSizeBytes(item.relatedPath);
+    let extra = {};
+    if (exists && item.relatedPath) size = await dirSizeBytes(item.relatedPath);
+
+    if (item.dockerRelated && dockerInfo) {
+      exists = !!(dockerInfo.dockerCli || (dockerInfo.wsl && dockerInfo.wsl.length));
+      if (item.id === 'sug-docker-prune' && dockerInfo.df && dockerInfo.df.ok) {
+        size = dockerInfo.df.reclaimableTotal || 0;
+        extra.df = dockerInfo.df.rows;
+        extra.reclaimableLabel = formatBytes(size);
+      }
+      if (item.id === 'sug-docker-relocate') {
+        const vhdx = (dockerInfo.hotspots || []).filter(
+          (h) => h.isFile || (h.path && /ext4\.vhdx$/i.test(h.path)) || (h.id && h.id.includes('wsl'))
+        );
+        // prefer largest vhdx hotspot
+        const disks = (dockerInfo.hotspots || []).filter(
+          (h) => h.path && /\.vhdx$/i.test(String(h.path))
+        );
+        let best = disks.sort((a, b) => b.size - a.size)[0];
+        if (!best) {
+          best = (dockerInfo.hotspots || []).find((h) => h.id && h.id.includes('docker-wsl-docker-desktop-data'));
+        }
+        if (best) {
+          exists = !!best.exists;
+          size = best.size || 0;
+          extra.vhdxPath = best.path;
+          extra.distro = best.meta && best.meta.distro;
+        }
+        if (dockerInfo.settings) {
+          extra.settings = {
+            dataFolder: dockerInfo.settings.dataFolder,
+            customWslDistroDir: dockerInfo.settings.customWslDistroDir,
+            diskSizeMiB: dockerInfo.settings.diskSizeMiB,
+          };
+        }
+      }
+    }
+
     out.push({
       ...item,
       exists,
       size,
       sizeLabel: formatBytes(size),
       canApply: Boolean(item.applyAction),
+      extra: Object.keys(extra).length ? extra : undefined,
     });
   }
   out.sort((a, b) => b.size - a.size);

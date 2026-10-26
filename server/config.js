@@ -45,5 +45,6 @@ module.exports = {
     'temp-logs',
     'browser-cache',
     'thumbnails',
+    'docker-cache',
   ]),
 };

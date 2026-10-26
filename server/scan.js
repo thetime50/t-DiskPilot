@@ -7,6 +7,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const { walkRank, measureDir } = require('./walker');
+const docker = require('./docker');
 
 const HOME = os.homedir();
 
@@ -134,6 +135,9 @@ function hotspotRules() {
     { id: 'cargo', category: 'suggest-only', label: '.cargo', path: path.join(HOME, '.cargo'), risk: 'high' },
     { id: 'gradle', category: 'suggest-only', label: '.gradle', path: path.join(HOME, '.gradle'), risk: 'high' },
     { id: 'appdata', category: 'suggest-only', label: 'AppData', path: path.join(HOME, 'AppData'), risk: 'high' },
+    { id: 'docker-local', category: 'docker-data', label: 'Docker Desktop Local', path: path.join(localApp, 'Docker'), risk: 'medium' },
+    { id: 'docker-programdata', category: 'docker-data', label: 'ProgramData\\DockerDesktop', path: 'C:\\ProgramData\\DockerDesktop', risk: 'medium' },
+    { id: 'docker-wsl-main', category: 'suggest-only', label: 'docker-desktop WSL vhdx', path: path.join(localApp, 'Docker', 'wsl', 'main', 'ext4.vhdx'), risk: 'high' },
   ];
 }
 
@@ -147,10 +151,18 @@ async function measureHotspotsNode({ includeSuggestOnly = true, shouldCancel, on
     const exists = fs.existsSync(rule.path);
     let size = 0;
     if (exists) {
-      size = await dirSizeBytes(rule.path, {
-        shouldCancel,
-        progressMinIntervalMs: 400,
-      });
+      try {
+        const st = fs.statSync(rule.path);
+        if (st.isFile()) size = st.size;
+        else {
+          size = await dirSizeBytes(rule.path, {
+            shouldCancel,
+            progressMinIntervalMs: 400,
+          });
+        }
+      } catch {
+        size = 0;
+      }
     }
     results.push({
       ...rule,
@@ -159,6 +171,27 @@ async function measureHotspotsNode({ includeSuggestOnly = true, shouldCancel, on
       sizeLabel: formatBytes(size),
     });
   }
+
+  // Docker WSL vhdx (from registry) + docker system df — skip duplicate paths
+  try {
+    if (onItem) onItem('Docker detection');
+    const collected = await docker.collectDockerHotspots({
+      dirSizeBytes,
+      formatBytes,
+      shouldCancel,
+    });
+    const seen = new Set(results.map((r) => String(r.path || '').toLowerCase()));
+    for (const h of collected.hotspots || []) {
+      const key = String(h.path || '').toLowerCase();
+      if (key && seen.has(key)) continue;
+      if (!includeSuggestOnly && h.category === 'suggest-only') continue;
+      seen.add(key);
+      results.push(h);
+    }
+  } catch (_) {
+    /* docker optional */
+  }
+
   results.sort((a, b) => b.size - a.size);
   return results;
 }
@@ -175,4 +208,5 @@ module.exports = {
   hotspotRules,
   measureHotspots,
   measureHotspotsNode,
+  docker,
 };
