@@ -1,0 +1,441 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Calm teal + slate palette (otter icon) */
+  --bg: #0b1419;
+  --panel: #132029;
+  --panel2: #1a2f3a;
+  --border: #2a4550;
+  --text: #e8eef2;
+  --muted: #8aa3ad;
+  --accent: #14b8a6;
+  --accent-hover: #2dd4bf;
+  --accent-deep: #0f766e;
+  --ok: #34d399;
+  --warn: #fbbf24;
+  --danger: #f87171;
+  --surface-deep: #071016;
+  --chrome: #0e1a20;
+  --radius: 12px;
+  --scroll-track: #0b1419;
+  --scroll-thumb: #2a4550;
+  --scroll-thumb-hover: #14b8a6;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  min-height: 100%;
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Segoe UI', 'Microsoft YaHei', system-ui, sans-serif;
+}
+
+/* Themed scrollbars — Firefox */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--scroll-thumb) var(--scroll-track);
+}
+
+/* Themed scrollbars — WebKit / Chromium (Tauri WebView2) */
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scroll-track);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--scroll-thumb);
+  border-radius: 999px;
+  border: 2px solid var(--scroll-track);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--scroll-thumb-hover);
+}
+
+*::-webkit-scrollbar-corner {
+  background: var(--scroll-track);
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+
+.app-root {
+  min-height: 100vh;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+}
+
+/* Custom window chrome (SquirrelDisk-style: decorations:false) */
+.titlebar {
+  -webkit-app-region: drag;
+  app-region: drag;
+  height: 36px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 0 0 12px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  user-select: none;
+}
+
+.titlebar-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.titlebar-logo {
+  width: 18px;
+  height: 18px;
+  border-radius: 4px;
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+.titlebar-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.titlebar-controls {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  display: flex;
+  height: 100%;
+}
+
+.titlebar-btn {
+  -webkit-app-region: no-drag;
+  app-region: no-drag;
+  width: 46px;
+  height: 100%;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+
+  &:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text);
+  }
+
+  &.titlebar-btn-close:hover {
+    background: #e81123;
+    color: #fff;
+  }
+}
+
+.app-shell {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 18px 20px 60px;
+  background: var(--bg);
+  flex: 1;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.app-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+
+  .app-logo {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    box-shadow: 0 0 0 1px var(--border), 0 4px 14px rgba(20, 184, 166, 0.18);
+    flex-shrink: 0;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 1.55rem;
+    letter-spacing: 0.04em;
+    font-weight: 650;
+    color: var(--text);
+  }
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  margin-bottom: 14px;
+  box-shadow: 0 1px 0 rgba(20, 184, 166, 0.04);
+
+  h2 {
+    margin: 0 0 12px;
+    font-size: 1.05rem;
+    color: var(--text);
+  }
+}
+
+.btn {
+  background: var(--accent);
+  color: #042f2e;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 14px;
+  cursor: pointer;
+  font-weight: 600;
+
+  &:hover:not(:disabled) {
+    background: var(--accent-hover);
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  &.secondary {
+    background: var(--panel2);
+    color: var(--text);
+    border: 1px solid var(--border);
+    font-weight: 500;
+
+    &:hover:not(:disabled) {
+      border-color: var(--accent);
+      color: var(--accent-hover);
+      background: var(--panel2);
+    }
+  }
+  &.danger {
+    background: var(--danger);
+    color: #1f0a0a;
+  }
+  &.ok {
+    background: var(--ok);
+    color: #06210f;
+    font-weight: 600;
+  }
+}
+
+.tag {
+  font-size: 0.72rem;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--surface-deep);
+  color: var(--muted);
+  border: 1px solid var(--border);
+
+  &.low {
+    color: var(--ok);
+    border-color: #14532d;
+  }
+  &.medium {
+    color: var(--warn);
+    border-color: #78350f;
+  }
+  &.high {
+    color: var(--danger);
+    border-color: #7f1d1d;
+  }
+  &.direct {
+    color: #5eead4;
+  }
+  &.quarantine {
+    color: #99f6e4;
+  }
+}
+
+.mono {
+  font-family: ui-monospace, Consolas, monospace;
+  font-size: 0.85rem;
+  word-break: break-all;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.log-box {
+  background: var(--surface-deep);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px;
+  max-height: 260px;
+  overflow: auto;
+  font-size: 0.8rem;
+  color: #cbd5e1;
+  white-space: pre-wrap;
+}
+
+.confirm-box {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 10px;
+  border: 1px dashed var(--warn);
+  background: #1c1808;
+}
+
+.item-card {
+  display: grid;
+  grid-template-columns: 28px 1fr auto;
+  gap: 10px;
+  align-items: start;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  margin-bottom: 8px;
+  background: var(--panel2);
+
+  &.disabled {
+    opacity: 0.55;
+  }
+  h3 {
+    margin: 0 0 4px;
+    font-size: 0.98rem;
+  }
+  p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 0.85rem;
+  }
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92rem;
+
+  th,
+  td {
+    text-align: left;
+    padding: 8px 6px;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+  th {
+    color: var(--muted);
+    font-weight: 600;
+    font-size: 0.8rem;
+  }
+}
+
+.progress-bar {
+  height: 12px;
+  background: var(--surface-deep);
+  border-radius: 999px;
+  overflow: hidden;
+  border: 1px solid var(--border);
+
+  > i {
+    display: block;
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--accent-deep), var(--accent), var(--ok));
+    transition: width 0.15s ease;
+
+    &.indeterminate {
+      width: 40% !important;
+      animation: indet 1.2s ease-in-out infinite;
+    }
+  }
+}
+
+@keyframes indet {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(280%);
+  }
+}
+
+.breadcrumb {
+  margin-top: 10px;
+  padding: 8px 10px;
+  background: var(--surface-deep);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 0.85rem;
+  color: #5eead4;
+  min-height: 3.2em;
+  max-height: 3.2em;
+  overflow: hidden;
+  line-height: 1.35;
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.current-path {
+  margin-top: 6px;
+  padding: 6px 10px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 0.8rem;
+  color: var(--muted);
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.chart-wrap {
+  width: 100%;
+  overflow-x: auto;
+  margin: 12px 0;
+
+  svg {
+    display: block;
+  }
+}
+
+.tab-btn {
+  border-radius: 999px;
+  padding: 10px 16px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  background: var(--panel);
+  color: var(--muted);
+  transition: background 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+
+  &:hover {
+    color: var(--text);
+    border-color: var(--accent-deep);
+  }
+
+  &.active {
+    background: var(--accent);
+    color: #042f2e;
+    border-color: var(--accent);
+    font-weight: 600;
+  }
+}
+
+.health-pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--panel2);
+  color: var(--muted);
+  font-size: 0.75rem;
+  border: 1px solid var(--border);
+}

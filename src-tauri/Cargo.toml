@@ -1,0 +1,26 @@
+﻿[package]
+name = "t-diskpilot"
+version = "1.2.0"
+description = "t-DiskPilot desktop shell"
+authors = ["xin luo"]
+edition = "2021"
+rust-version = "1.77"
+
+[lib]
+name = "t_diskpilot_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["image-png"] }
+tauri-plugin-shell = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+

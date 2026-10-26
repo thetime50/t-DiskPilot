@@ -1,5 +1,6 @@
 'use strict';
 
+const fs = require('fs');
 const path = require('path');
 const express = require('express');
 const cors = require('cors');
@@ -15,13 +16,16 @@ const scanJob = require('./scanJob');
 const app = express();
 app.use(cors());
 app.use(express.json({ limit: '2mb' }));
-app.use(express.static(path.join(__dirname, '..', 'public')));
+const DIST = path.join(__dirname, '..', 'dist');
+const LEGACY_PUBLIC = path.join(__dirname, '..', 'legacy-public');
+const staticRoot = fs.existsSync(DIST) ? DIST : LEGACY_PUBLIC;
+app.use(express.static(staticRoot));
 
 app.get('/api/health', (_req, res) => {
   res.json({
     ok: true,
     name: 't-DiskPilot',
-    version: '1.1.0',
+    version: '1.2.0',
     quarantineRoot: quarantine.getRoot(),
     home: config.HOME,
     scan: scanJob.snapshot(),
@@ -205,7 +209,15 @@ app.post('/api/quarantine/restore', (req, res) => {
 });
 
 app.get('*', (_req, res) => {
-  res.sendFile(path.join(__dirname, '..', 'public', 'index.html'));
+  const indexHtml = path.join(staticRoot, 'index.html');
+  if (fs.existsSync(indexHtml)) {
+    return res.sendFile(indexHtml);
+  }
+  // Dev: Vite serves UI on :5173; API-only here.
+  res.status(404).json({
+    error: 'UI not built. Run npm run dev (Vite :5173) or npm run build then npm start.',
+    api: true,
+  });
 });
 
 const server = app.listen(config.PORT, '127.0.0.1', () => {
