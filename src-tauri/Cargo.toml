@@ -1,4 +1,4 @@
-﻿[package]
+[package]
 name = "t-diskpilot"
 version = "1.2.0"
 description = "t-DiskPilot desktop shell"

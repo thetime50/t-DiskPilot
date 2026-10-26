@@ -7,3 +7,7 @@ src-tauri/target/
 src-tauri/gen/
 .vscode/
 .idea/
+
+# local scan cache (single file, regenerated)
+data/last-scan.json
+data/*.tmp

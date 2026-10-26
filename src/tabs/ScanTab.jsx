@@ -152,12 +152,46 @@ export default function ScanTab({ initialScan }) {
     if (initialScan?.status === 'running') {
       setProgress(initialScan);
       startPolling();
+    } else {
+      loadCachedScan();
     }
     return () => {
       stopPolling();
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [initialScan, startPolling, stopPolling]);
+
+  async function loadCachedScan() {
+    try {
+      const data = await api('/api/scan/cached');
+      const cached = data?.cached;
+      if (!cached || !cached.rootRanking) return;
+      if (ranking) return; // already have live result
+      setRanking(cached.rootRanking);
+      setScanMeta({
+        durationLabel: cached.durationLabel,
+        rankingDurationLabel: cached.rootRanking?.durationLabel,
+        scannedAt: cached.scannedAt,
+        fromCache: true,
+      });
+      if (cached.hotspots) {
+        setHotspots(cached.hotspots);
+        setHotspotMsg('');
+      }
+      setRankingMsg(cached.scannedAt ? '来自缓存 · ' + cached.scannedAt : '来自缓存');
+      if (!progress) {
+        setProgress({
+          status: 'done',
+          percent: 100,
+          durationLabel: cached.durationLabel,
+          startedAt: cached.scannedAt,
+          finishedAt: cached.scannedAt,
+        });
+      }
+    } catch (_) {
+      /* ignore */
+    }
+  }
 
   async function startScan(body) {
     setRanking(null);
@@ -180,6 +214,64 @@ export default function ScanTab({ initialScan }) {
     } catch (err) {
       applyProgress({ status: 'error', error: String(err.message || err), percent: 0 });
       setRankingMsg(String(err.message || err));
+    }
+  }
+
+  
+
+  async function exportReportMd() {
+    try {
+      const data = await api('/api/export/report');
+      const markdown = data.markdown || '';
+      const name = data.suggestedName || 't-DiskPilot-report.md';
+
+      if (window.showSaveFilePicker) {
+        const handle = await window.showSaveFilePicker({
+          suggestedName: name,
+          types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }],
+        });
+        const writable = await handle.createWritable();
+        await writable.write(markdown);
+        await writable.close();
+        return;
+      }
+
+      // 无系统另存为时：先选路径（服务端写入），再退回下载
+      const picked = window.prompt('浏览器不支持另存为对话框，请输入要保存的完整 .md 路径：', 'D:\\' + name);
+      if (picked && picked.trim()) {
+        await api('/api/export/report', {
+          method: 'POST',
+          body: JSON.stringify({ path: picked.trim() }),
+        });
+        alert('已保存到 ' + picked.trim());
+        return;
+      }
+
+      const blob = new Blob([markdown], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = name;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+      alert(String(err.message || err));
+    }
+  }
+
+  async function clearScanCacheHistory() {
+    if (!confirm('清除本地扫描缓存历史？仅删除 data/last-scan.json，不影响隔离区。')) return;
+    try {
+      await api('/api/scan/cache', { method: 'DELETE' });
+      setRanking(null);
+      setScanMeta(null);
+      setHotspots(null);
+      setRankingMsg('缓存已清理');
+      setHotspotMsg('尚未扫描');
+      setProgress(null);
+    } catch (err) {
+      alert(String(err.message || err));
     }
   }
 
@@ -237,6 +329,27 @@ export default function ScanTab({ initialScan }) {
           </button>
           <button type="button" className="btn danger" disabled={!scanning} onClick={cancelScan}>
             取消扫描
+          </button>
+          <button
+            type="button"
+            className="btn secondary icon-btn"
+            title="清理缓存历史"
+            aria-label="清理缓存历史"
+            disabled={scanning}
+            onClick={clearScanCacheHistory}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+              <path d="M4 7h16M9 7V5h6v2M8 7l1 12h6l1-12" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/>
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="btn secondary"
+            title="导出报告"
+            disabled={scanning}
+            onClick={exportReportMd}
+          >
+            导出
           </button>
         </div>
         <div className="flex flex-wrap gap-2.5 items-center mb-3">

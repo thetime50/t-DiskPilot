@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import LoadingBlock from '../components/LoadingBlock.jsx';
 import { useLoadProgress } from '../hooks/useLoadProgress.js';
+import { useScanFreshness } from '../hooks/useScanFreshness.js';
 import { api, formatLog } from '../api.js';
 
 export default function CleanTab() {
@@ -13,6 +14,7 @@ export default function CleanTab() {
   const [log, setLog] = useState('');
 
   const { progress: loadProgress, start: startLoadProgress, stop: stopLoadProgress } = useLoadProgress('/api/clean/checklist/progress');
+  const { freshness, refreshFreshness, canAct, stale } = useScanFreshness();
 
   async function refresh(force = false) {
     setLoading(true);
@@ -27,6 +29,7 @@ export default function CleanTab() {
     } finally {
       stopLoadProgress();
       setLoading(false);
+      refreshFreshness();
     }
   }
 
@@ -49,6 +52,7 @@ export default function CleanTab() {
   }
 
   async function dryRun() {
+    if (!canAct) return alert(freshness?.reason || '扫描已过期，请先重新扫描');
     const ids = [...selected];
     if (!ids.length) return alert('请先勾选项目');
     try {
@@ -59,6 +63,7 @@ export default function CleanTab() {
   }
 
   async function doClean() {
+    if (!canAct) return alert(freshness?.reason || '扫描已过期，请先重新扫描');
     if (confirmToken.trim() !== 'CONFIRM') return alert('请输入 CONFIRM');
     const ids = [...selected];
     try {
@@ -81,6 +86,10 @@ export default function CleanTab() {
   return (
     <div className="panel">
       <h2>清理清单（逐条勾选）</h2>
+      <div className={`scan-freshness${stale || !canAct ? ' is-stale' : ''}`}>
+        {freshness?.reason || (stale ? '扫描结果不可用' : '扫描结果有效')}
+        {freshness?.scannedAt ? ` · 扫描于 ${freshness.scannedAt}` : ''}
+      </div>
       <p className="muted">低风险项确认后可直接删除；其余先移入隔离区。默认不会自动执行。</p>
       <div className="flex flex-wrap gap-2.5 items-center mb-3">
         <button type="button" className="btn secondary" onClick={() => refresh(true)}>
@@ -125,13 +134,14 @@ export default function CleanTab() {
           </div>
         ))}
 
-      <div className="sticky bottom-3 flex flex-wrap gap-2.5 items-center p-3 bg-[rgba(26,35,50,0.95)] border border-border rounded-xl backdrop-blur-sm">
-        <button type="button" className="btn" onClick={dryRun}>
+      <div className="sticky bottom-1.5 flex flex-wrap gap-2.5 items-center py-1.5 px-3 bg-[rgba(26,35,50,0.95)] border border-border rounded-xl backdrop-blur-sm">
+        <button type="button" className="btn" onClick={dryRun} disabled={!canAct}>
           预演（dry-run）
         </button>
         <button
           type="button"
           className="btn ok"
+          disabled={!canAct}
           onClick={() => {
             if (![...selected].length) return alert('请先勾选项目');
             setShowConfirm(true);
@@ -156,7 +166,7 @@ export default function CleanTab() {
               value={confirmToken}
               onChange={(e) => setConfirmToken(e.target.value)}
             />
-            <button type="button" className="btn danger" onClick={doClean}>
+            <button type="button" className="btn danger" onClick={doClean} disabled={!canAct}>
               执行清理
             </button>
             <button

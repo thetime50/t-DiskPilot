@@ -165,7 +165,7 @@ select {
 .app-shell {
   max-width: 1100px;
   margin: 0 auto;
-  padding: 18px 20px 60px;
+  padding: 18px 20px 30px;
   background: var(--bg);
   flex: 1;
   min-height: 0;
@@ -394,10 +394,10 @@ select {
   font-size: 0.85rem;
   color: #5eead4;
   min-height: 3.2em;
-  max-height: 3.2em;
   overflow: hidden;
   line-height: 1.35;
   font-family: ui-monospace, Consolas, monospace;
+  height: 4.5em;
 }
 
 .current-path {
@@ -484,4 +484,36 @@ select {
   to {
     transform: rotate(360deg);
   }
+}
+
+.scan-freshness {
+  margin: 0 0 12px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: var(--panel2);
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.scan-freshness.is-stale {
+  color: #9ca3af;
+  border-color: #4b5563;
+  background: #111827;
+}
+
+.btn:disabled,
+button.btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+  filter: grayscale(0.7);
+}
+
+.icon-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 36px;
+  padding-left: 10px;
+  padding-right: 10px;
 }

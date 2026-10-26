@@ -3,6 +3,7 @@
 const path = require('path');
 const scan = require('./scan');
 const { walkRank } = require('./walker');
+const scanPersist = require('./scanPersist');
 const { formatBytes } = require('./scan');
 
 function formatDuration(ms) {
@@ -240,6 +241,7 @@ async function runJob(id, { drive, targetPath, includeHotspots }) {
     if (job._cancel) {
       job.status = 'cancelled';
     } else {
+      try { scanPersist.saveScanResult(job.result); } catch (_) { /* ignore persist errors */ }
       job.status = 'done';
       job.percent = 100;
     }

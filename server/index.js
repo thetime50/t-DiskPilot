@@ -10,6 +10,8 @@ const scan = require('./scan');
 const clean = require('./clean');
 const optimize = require('./optimize');
 const suggest = require('./suggest');
+const scanPersist = require('./scanPersist');
+const exportReport = require('./exportReport');
 const quarantine = require('./quarantine');
 const scanJob = require('./scanJob');
 
@@ -70,6 +72,16 @@ app.get('/api/scan/progress', (_req, res) => {
 app.get('/api/scan/result', (_req, res) => {
   const snap = scanJob.snapshot();
   res.json({ ...snap, result: scanJob.getResult() });
+
+app.get('/api/scan/cached', (_req, res) => {
+  const cached = scanPersist.loadScanResult();
+  res.json({ cached, freshness: scanPersist.freshness() });
+});
+
+app.get('/api/scan/freshness', (_req, res) => {
+  res.json(scanPersist.freshness());
+});
+
 });
 
 app.post('/api/scan/cancel', (_req, res) => {
@@ -132,6 +144,12 @@ app.get('/api/clean/checklist', async (req, res) => {
 app.post('/api/clean/execute', async (req, res) => {
   try {
     const { ids = [], dryRun = true, confirmToken } = req.body || {};
+    if (dryRun === false) {
+      const fr = scanPersist.freshness();
+      if (!fr.canAct) {
+        return res.status(403).json({ error: fr.reason, code: 'SCAN_STALE', freshness: fr });
+      }
+    }
     const result = await clean.executeClean({ ids, dryRun: dryRun !== false, confirmToken });
     if (dryRun === false) clean.clearResultCache();
     res.json(result);
@@ -165,6 +183,12 @@ app.get('/api/optimize/checklist', async (req, res) => {
 app.post('/api/optimize/execute', async (req, res) => {
   try {
     const { ids = [], dryRun = true, confirmToken } = req.body || {};
+    if (dryRun === false) {
+      const fr = scanPersist.freshness();
+      if (!fr.canAct) {
+        return res.status(403).json({ error: fr.reason, code: 'SCAN_STALE', freshness: fr });
+      }
+    }
     const result = await optimize.executeOptimize({ ids, dryRun: dryRun !== false, confirmToken });
     if (dryRun === false) optimize.clearResultCache();
     res.json(result);
