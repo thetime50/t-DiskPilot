@@ -1,6 +1,6 @@
 ﻿import { useEffect, useState } from 'react';
 
-/** Custom chrome matching SquirrelDisk: undecorated window + dark drag titlebar */
+/** Custom chrome matching SquirrelDisk: undecorated window + dark drag titlebar (scroll-locked) */
 export default function TitleBar() {
   const [maximized, setMaximized] = useState(false);
   const [win, setWin] = useState(null);
@@ -32,12 +32,23 @@ export default function TitleBar() {
     };
   }, []);
 
+  const blockScroll = (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
   const minimize = () => win?.minimize();
   const toggleMax = () => win?.toggleMaximize();
   const close = () => win?.close();
 
   return (
-    <div data-tauri-drag-region className="titlebar">
+    <div
+      data-tauri-drag-region
+      className="titlebar"
+      onWheel={blockScroll}
+      onTouchMove={blockScroll}
+      onScroll={blockScroll}
+    >
       <div className="titlebar-left" data-tauri-drag-region>
         <img className="titlebar-logo" src="/app-icon.png" alt="" width={20} height={20} draggable={false} />
         <span className="titlebar-title" data-tauri-drag-region>

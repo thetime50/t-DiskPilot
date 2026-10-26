@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import LoadingBlock from '../components/LoadingBlock.jsx';
+import { useLoadProgress } from '../hooks/useLoadProgress.js';
 import { api, formatLog } from '../api.js';
 
 export default function OptimizeTab() {
@@ -10,22 +12,27 @@ export default function OptimizeTab() {
   const [confirmToken, setConfirmToken] = useState('');
   const [log, setLog] = useState('');
 
-  async function refresh() {
+  const { progress: loadProgress, start: startLoadProgress, stop: stopLoadProgress } = useLoadProgress('/api/optimize/checklist/progress');
+
+  async function refresh(force = false) {
     setLoading(true);
     setError('');
+    startLoadProgress();
     try {
-      const data = await api('/api/optimize/checklist');
+      const data = await api('/api/optimize/checklist' + (force ? '?refresh=1' : ''));
       setItems(data.items || []);
       setSelected(new Set());
     } catch (err) {
       setError(String(err.message || err));
     } finally {
+      stopLoadProgress();
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    refresh();
+    if (items.length) return;
+    refresh(false);
   }, []);
 
   function toggle(id, on) {
@@ -60,7 +67,7 @@ export default function OptimizeTab() {
       );
       setShowConfirm(false);
       setConfirmToken('');
-      refresh();
+      refresh(true);
     } catch (err) {
       setLog(formatLog(err.data || err.message));
     }
@@ -71,11 +78,11 @@ export default function OptimizeTab() {
       <h2>优化清单（逐条勾选）</h2>
       <p className="muted">包含传递优化缓存、缩略图、回收站、存储感知等。更改前需确认。</p>
       <div className="flex flex-wrap gap-2.5 items-center mb-3">
-        <button type="button" className="btn secondary" onClick={refresh}>
+        <button type="button" className="btn secondary" onClick={() => refresh(true)}>
           刷新
         </button>
       </div>
-      {loading && <p className="muted">加载优化清单…</p>}
+      {loading && <LoadingBlock title="加载优化清单…" progress={loadProgress} />}
       {error && <p className="muted">{error}</p>}
       {!loading &&
         items.map((item) => (

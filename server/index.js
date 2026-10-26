@@ -108,10 +108,22 @@ app.get('/api/hotspots', async (_req, res) => {
   }
 });
 
-app.get('/api/clean/checklist', async (_req, res) => {
+app.get('/api/clean/checklist/progress', (_req, res) => {
+  res.json(clean.getChecklistProgress());
+});
+
+app.get('/api/clean/checklist', async (req, res) => {
   try {
+    const force = String(req.query.refresh || '') === '1' || String(req.query.refresh || '') === 'true';
+    if (!force) {
+      const hit = clean.getCachedResult();
+      if (hit && hit.value) {
+        return res.json({ items: hit.value, cached: true, cachedAt: hit.at, policy: '低风险可直接删；其余先隔离' });
+      }
+    }
     const items = await clean.buildChecklist();
-    res.json({ items, policy: '低风险可直接删；其余先隔离' });
+    clean.setCachedResult(items);
+    res.json({ items, cached: false, policy: '低风险可直接删；其余先隔离' });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -121,6 +133,7 @@ app.post('/api/clean/execute', async (req, res) => {
   try {
     const { ids = [], dryRun = true, confirmToken } = req.body || {};
     const result = await clean.executeClean({ ids, dryRun: dryRun !== false, confirmToken });
+    if (dryRun === false) clean.clearResultCache();
     res.json(result);
   } catch (err) {
     const status = err.code === 'NEED_CONFIRM' ? 400 : 500;
@@ -128,10 +141,22 @@ app.post('/api/clean/execute', async (req, res) => {
   }
 });
 
-app.get('/api/optimize/checklist', async (_req, res) => {
+app.get('/api/optimize/checklist/progress', (_req, res) => {
+  res.json(optimize.getChecklistProgress());
+});
+
+app.get('/api/optimize/checklist', async (req, res) => {
   try {
+    const force = String(req.query.refresh || '') === '1' || String(req.query.refresh || '') === 'true';
+    if (!force) {
+      const hit = optimize.getCachedResult();
+      if (hit && hit.value) {
+        return res.json({ items: hit.value, cached: true, cachedAt: hit.at });
+      }
+    }
     const items = await optimize.buildChecklist();
-    res.json({ items });
+    optimize.setCachedResult(items);
+    res.json({ items, cached: false });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -141,6 +166,7 @@ app.post('/api/optimize/execute', async (req, res) => {
   try {
     const { ids = [], dryRun = true, confirmToken } = req.body || {};
     const result = await optimize.executeOptimize({ ids, dryRun: dryRun !== false, confirmToken });
+    if (dryRun === false) optimize.clearResultCache();
     res.json(result);
   } catch (err) {
     const status = err.code === 'NEED_CONFIRM' ? 400 : 500;
@@ -148,10 +174,22 @@ app.post('/api/optimize/execute', async (req, res) => {
   }
 });
 
-app.get('/api/suggest', async (_req, res) => {
+app.get('/api/suggest/progress', (_req, res) => {
+  res.json(suggest.getLoadProgress());
+});
+
+app.get('/api/suggest', async (req, res) => {
   try {
+    const force = String(req.query.refresh || '') === '1' || String(req.query.refresh || '') === 'true';
+    if (!force) {
+      const hit = suggest.getCachedResult();
+      if (hit && hit.value) {
+        return res.json({ items: hit.value, cached: true, cachedAt: hit.at });
+      }
+    }
     const items = await suggest.buildSuggestions();
-    res.json({ items });
+    suggest.setCachedResult(items);
+    res.json({ items, cached: false });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -161,6 +199,7 @@ app.post('/api/suggest/apply', async (req, res) => {
   try {
     const { id, dryRun = true, confirmToken, params } = req.body || {};
     const result = await suggest.applySuggestion({ id, dryRun: dryRun !== false, confirmToken, params });
+    if (dryRun === false) suggest.clearResultCache();
     res.json(result);
   } catch (err) {
     const status = err.code === 'NEED_CONFIRM' ? 400 : 500;

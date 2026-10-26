@@ -10,6 +10,11 @@ const config = require('./config');
 const logger = require('./logger');
 const quarantine = require('./quarantine');
 const { formatBytes, dirSizeBytes } = require('./scan');
+const { createLoadProgress } = require('./loadProgress');
+const { createResultCache } = require('./resultCache');
+const resultCache = createResultCache();
+
+const checklistProgress = createLoadProgress();
 const docker = require('./docker');
 
 const HOME = os.homedir();
@@ -145,7 +150,12 @@ async function buildChecklist() {
   const out = [];
   let df = null;
   const needsDf = items.some((i) => i.action === 'docker-prune');
+  const totalSteps = items.length + (needsDf ? 1 : 0);
+  checklistProgress.begin(totalSteps, '准备清单…');
+  let step = 0;
+  try {
   if (needsDf) {
+    checklistProgress.step(++step, '查询 Docker 占用…');
     try {
       df = await docker.dockerSystemDf();
     } catch (_) {
@@ -153,6 +163,8 @@ async function buildChecklist() {
     }
   }
   for (const item of items) {
+    checklistProgress.step(++step, item.label || item.id);
+
     if (item.action === 'docker-prune') {
       const cliOk = df && df.ok;
       let size = 0;
@@ -203,7 +215,16 @@ async function buildChecklist() {
       selectable: exists && size > 0,
     });
   }
+  checklistProgress.end();
   return out;
+  } catch (err) {
+    checklistProgress.fail(err);
+    throw err;
+  }
+}
+
+function getChecklistProgress() {
+  return checklistProgress.snapshot();
 }
 
 async function emptyDirContents(dirPath, { dryRun = true } = {}) {
@@ -305,9 +326,26 @@ async function executeClean({ ids = [], dryRun = true, confirmToken } = {}) {
   return { dryRun, results, at: new Date().toISOString() };
 }
 
+
+function getCachedResult() {
+  return resultCache.get();
+}
+
+function setCachedResult(value) {
+  return resultCache.set(value);
+}
+
+function clearResultCache() {
+  resultCache.clear();
+}
+
 module.exports = {
   cleanCatalog,
   buildChecklist,
+  getChecklistProgress,
+  getCachedResult,
+  setCachedResult,
+  clearResultCache,
   executeClean,
   emptyDirContents,
 };

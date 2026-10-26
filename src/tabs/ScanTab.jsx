@@ -5,6 +5,18 @@ import RankingBarChart from '../charts/RankingBarChart.jsx';
 const UI_DEBOUNCE_MS = 150;
 const POLL_MS = 200;
 
+function formatDuration(ms) {
+  if (ms == null || Number.isNaN(ms) || ms < 0) return '—';
+  const num = Math.round(Number(ms));
+  if (num < 1000) return num + ' ms';
+  const s = num / 1000;
+  if (s < 60) return s.toFixed(1) + ' s';
+  const m = Math.floor(s / 60);
+  const rem = Math.round(s - m * 60);
+  return m + 'm ' + rem + 's';
+}
+
+
 const STATUS_MAP = {
   idle: '空闲',
   running: '扫描中…',
@@ -27,6 +39,19 @@ export default function ScanTab({ initialScan }) {
   const debounceRef = useRef(null);
   const lastProgressRef = useRef(null);
   const scanning = progress?.status === 'running';
+  const [elapsedMs, setElapsedMs] = useState(null);
+
+  useEffect(() => {
+    if (!scanning || !progress?.startedAt) {
+      setElapsedMs(null);
+      return undefined;
+    }
+    const tick = () => setElapsedMs(Date.now() - Date.parse(progress.startedAt));
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, [scanning, progress?.startedAt]);
+
 
   const applyProgress = useCallback((p) => setProgress(p), []);
 
@@ -180,6 +205,9 @@ export default function ScanTab({ initialScan }) {
   const pct = progress?.percent != null ? progress.percent : 0;
   const indeterminate =
     progress?.status === 'running' && (!progress.totalBytes || progress.percent === 0);
+  const durationLabel = scanning
+    ? formatDuration(elapsedMs ?? progress?.durationMs)
+    : progress?.durationLabel || null;
 
   return (
     <>
@@ -270,7 +298,7 @@ export default function ScanTab({ initialScan }) {
         <div className="muted text-sm mt-2">
           已扫描 {progress?.scannedLabel || '—'} / {progress?.totalLabel || '—'} · 文件{' '}
           {progress?.fileCount || 0} · 目录 {progress?.dirCount || 0}
-          {progress?.durationLabel ? ` · 用时 ${progress.durationLabel}` : ''}
+          {durationLabel ? ` · 用时 ${durationLabel}` : ''}
         </div>
         <div className="breadcrumb" title={progress?.breadcrumb || ''}>
           {progress?.breadcrumb || '—'}
@@ -283,11 +311,11 @@ export default function ScanTab({ initialScan }) {
       <div className="panel">
         <h2>目录排行</h2>
         {ranking ? (
-          <>
+          <div className="ranking-scroll" style={{ maxHeight: 1800, overflowY: 'auto' }}>
             <RankingMeta ranking={ranking} scanMeta={scanMeta} />
             <RankingBarChart children={ranking.children || []} />
             <RankingTable ranking={ranking} />
-          </>
+          </div>
         ) : (
           <div className="muted">{rankingMsg}</div>
         )}
@@ -338,7 +366,7 @@ function RankingTable({ ranking }) {
                 {c.isDir ? '📁' : '📄'} {c.name}
               </td>
               <td>{c.sizeLabel || '—'}</td>
-              <td className="mono text-muted whitespace-nowrap text-right">{c.durationLabel || '—'}</td>
+              <td className="mono text-muted whitespace-nowrap text-right mr-10">{c.durationLabel || '—'}</td>
               <td className="mono">{c.path}</td>
             </tr>
           ))

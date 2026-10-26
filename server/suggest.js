@@ -6,6 +6,11 @@ const os = require('os');
 const { formatBytes, dirSizeBytes } = require('./scan');
 const docker = require('./docker');
 const logger = require('./logger');
+const { createLoadProgress } = require('./loadProgress');
+const { createResultCache } = require('./resultCache');
+const resultCache = createResultCache();
+
+const loadProgress = createLoadProgress();
 
 const HOME = os.homedir();
 const localApp = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
@@ -189,6 +194,10 @@ async function buildSuggestions() {
   const items = suggestCatalog();
   const out = [];
   let dockerInfo = null;
+  loadProgress.begin(items.length + 1, '准备建议…');
+  let step = 0;
+  try {
+  loadProgress.step(++step, '查询 Docker / WSL…');
   try {
     dockerInfo = await docker.collectDockerHotspots({
       dirSizeBytes,
@@ -199,6 +208,8 @@ async function buildSuggestions() {
   }
 
   for (const item of items) {
+    loadProgress.step(++step, item.title || item.label || item.id);
+
     let exists = item.relatedPath ? fs.existsSync(item.relatedPath) : false;
     let size = 0;
     let extra = {};
@@ -249,7 +260,16 @@ async function buildSuggestions() {
     });
   }
   out.sort((a, b) => b.size - a.size);
+  loadProgress.end();
   return out;
+  } catch (err) {
+    loadProgress.fail(err);
+    throw err;
+  }
+}
+
+function getLoadProgress() {
+  return loadProgress.snapshot();
 }
 
 async function applySuggestion({ id, dryRun = true, confirmToken, params = {} } = {}) {
@@ -313,8 +333,25 @@ async function setUserEnv(name, value) {
   await execFileAsync('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true });
 }
 
+
+function getCachedResult() {
+  return resultCache.get();
+}
+
+function setCachedResult(value) {
+  return resultCache.set(value);
+}
+
+function clearResultCache() {
+  resultCache.clear();
+}
+
 module.exports = {
   suggestCatalog,
   buildSuggestions,
+  getLoadProgress,
+  getCachedResult,
+  setCachedResult,
+  clearResultCache,
   applySuggestion,
 };

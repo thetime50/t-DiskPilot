@@ -1,4 +1,6 @@
 import { useEffect, useState } from 'react';
+import LoadingBlock from '../components/LoadingBlock.jsx';
+import { useLoadProgress } from '../hooks/useLoadProgress.js';
 import { api, formatLog } from '../api.js';
 
 export default function SuggestTab() {
@@ -8,11 +10,14 @@ export default function SuggestTab() {
   const [error, setError] = useState('');
   const [log, setLog] = useState('');
 
-  async function refresh() {
+  const { progress: loadProgress, start: startLoadProgress, stop: stopLoadProgress } = useLoadProgress('/api/suggest/progress');
+
+  async function refresh(force = false) {
     setLoading(true);
     setError('');
+    startLoadProgress();
     try {
-      const data = await api('/api/suggest');
+      const data = await api('/api/suggest' + (force ? '?refresh=1' : ''));
       const list = data.items || [];
       setItems(list);
       const init = {};
@@ -23,12 +28,14 @@ export default function SuggestTab() {
     } catch (err) {
       setError(String(err.message || err));
     } finally {
+      stopLoadProgress();
       setLoading(false);
     }
   }
 
   useEffect(() => {
-    refresh();
+    if (items.length) return;
+    refresh(false);
   }, []);
 
   async function dryApply(id) {
@@ -71,11 +78,11 @@ export default function SuggestTab() {
       <h2>建议（可含路径迁移，非仅删除）</h2>
       <p className="muted">例如把 Pip 缓存改到 D 盘。应用环境变量/配置更改仍需确认。</p>
       <div className="flex flex-wrap gap-2.5 items-center mb-3">
-        <button type="button" className="btn secondary" onClick={refresh}>
+        <button type="button" className="btn secondary" onClick={() => refresh(true)}>
           刷新
         </button>
       </div>
-      {loading && <p className="muted">加载建议…</p>}
+      {loading && <LoadingBlock title="加载建议…" progress={loadProgress} />}
       {error && <p className="muted">{error}</p>}
       {!loading &&
         items.map((item) => {

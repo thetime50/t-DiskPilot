@@ -8,6 +8,11 @@ const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const logger = require('./logger');
 const { formatBytes, dirSizeBytes } = require('./scan');
+const { createLoadProgress } = require('./loadProgress');
+const { createResultCache } = require('./resultCache');
+const resultCache = createResultCache();
+
+const checklistProgress = createLoadProgress();
 
 const HOME = os.homedir();
 const localApp = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
@@ -85,7 +90,12 @@ if (-not (Test-Path $path)) {
 async function buildChecklist() {
   const items = optimizeCatalog();
   const out = [];
+  checklistProgress.begin(items.length, '准备优化清单…');
+  let step = 0;
+  try {
   for (const item of items) {
+    checklistProgress.step(++step, item.label || item.id);
+
     let size = 0;
     let exists = true;
     let extra = {};
@@ -120,7 +130,16 @@ async function buildChecklist() {
       extra,
     });
   }
+  checklistProgress.end();
   return out;
+  } catch (err) {
+    checklistProgress.fail(err);
+    throw err;
+  }
+}
+
+function getChecklistProgress() {
+  return checklistProgress.snapshot();
 }
 
 async function emptyDirSafe(dirPath, { dryRun }) {
@@ -220,9 +239,26 @@ New-ItemProperty -Path $path -Name '01' -Value 1 -PropertyType DWord -Force | Ou
   return { dryRun, results, at: new Date().toISOString() };
 }
 
+
+function getCachedResult() {
+  return resultCache.get();
+}
+
+function setCachedResult(value) {
+  return resultCache.set(value);
+}
+
+function clearResultCache() {
+  resultCache.clear();
+}
+
 module.exports = {
   optimizeCatalog,
   buildChecklist,
+  getChecklistProgress,
+  getCachedResult,
+  setCachedResult,
+  clearResultCache,
   executeOptimize,
   storageSenseStatus,
 };

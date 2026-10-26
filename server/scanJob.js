@@ -39,6 +39,10 @@ const job = {
 };
 
 function snapshot() {
+  let durationMs = job.durationMs;
+  if (job.status === 'running' && job.startedAt) {
+    durationMs = Date.now() - Date.parse(job.startedAt);
+  }
   return {
     id: job.id,
     status: job.status,
@@ -56,8 +60,8 @@ function snapshot() {
     error: job.error,
     startedAt: job.startedAt,
     finishedAt: job.finishedAt,
-    durationMs: job.durationMs,
-    durationLabel: formatDuration(job.durationMs),
+    durationMs,
+    durationLabel: formatDuration(durationMs),
     hasResult: !!job.result,
   };
 }

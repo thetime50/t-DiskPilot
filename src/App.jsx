@@ -70,13 +70,21 @@ export default function App() {
           ))}
         </nav>
 
-        {tab === 'scan' && <ScanTab initialScan={health?.scan} />}
-        {tab === 'clean' && <CleanTab />}
-        {tab === 'optimize' && <OptimizeTab />}
-        {tab === 'suggest' && <SuggestTab />}
-        {tab === 'quarantine' && (
+        <div hidden={tab !== 'scan'}>
+          <ScanTab initialScan={health?.scan} />
+        </div>
+        <div hidden={tab !== 'clean'}>
+          <CleanTab />
+        </div>
+        <div hidden={tab !== 'optimize'}>
+          <OptimizeTab />
+        </div>
+        <div hidden={tab !== 'suggest'}>
+          <SuggestTab />
+        </div>
+        <div hidden={tab !== 'quarantine'}>
           <QuarantineTab quarantineRoot={health?.quarantineRoot} />
-        )}
+        </div>
 
         <p className="mt-[18px] text-muted text-xs">
           t-DiskPilot 不会在未确认时删除或改配置。操作日志写在项目 <code>logs/</code> 目录。
