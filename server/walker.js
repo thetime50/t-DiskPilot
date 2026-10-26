@@ -19,15 +19,18 @@ function shortName(name, max = 18) {
 }
 
 function formatBreadcrumb(stack) {
-  // Keep last 4 segments to stay short
-  const slice = stack.length > 4 ? stack.slice(-4) : stack;
-  const prefix = stack.length > 4 ? '…/' : '';
-  return (
-    prefix +
-    slice
-      .map((s) => `${shortName(s.name)}(${s.index}/${s.count})`)
-      .join('/')
-  );
+  // Long paths: first 5 segments ... last 5 segments
+  const HEAD = 5;
+  const TAIL = 5;
+  const parts =
+    stack.length > HEAD + TAIL
+      ? [...stack.slice(0, HEAD), null, ...stack.slice(-TAIL)]
+      : stack;
+  return parts
+    .map((s) =>
+      s == null ? '...' : `${shortName(s.name)}(${s.index}/${s.count})`
+    )
+    .join('/');
 }
 
 /**
