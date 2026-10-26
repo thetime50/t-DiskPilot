@@ -3,8 +3,11 @@ import LoadingBlock from '../components/LoadingBlock.jsx';
 import { useLoadProgress } from '../hooks/useLoadProgress.js';
 import { useScanFreshness } from '../hooks/useScanFreshness.js';
 import { api, formatLog } from '../api.js';
+import { useDrive } from '../context/DriveContext.jsx';
+import { maskPath } from '../utils/maskPath';
 
 export default function CleanTab() {
+  const { drives, drive, setDrive } = useDrive();
   const [items, setItems] = useState([]);
   const [selected, setSelected] = useState(() => new Set());
   const [loading, setLoading] = useState(true);
@@ -21,7 +24,9 @@ export default function CleanTab() {
     setError('');
     startLoadProgress();
     try {
-      const data = await api('/api/clean/checklist' + (force ? '?refresh=1' : ''));
+      const q = new URLSearchParams({ drive });
+      if (force) q.set('refresh', '1');
+      const data = await api('/api/clean/checklist?' + q.toString());
       setItems(data.items || []);
       setSelected(new Set());
     } catch (err) {
@@ -34,9 +39,11 @@ export default function CleanTab() {
   }
 
   useEffect(() => {
-    if (items.length) return;
+    setItems([]);
+    setSelected(new Set());
     refresh(false);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drive]);
 
   function toggle(id, on) {
     setSelected((prev) => {
@@ -56,7 +63,7 @@ export default function CleanTab() {
     const ids = [...selected];
     if (!ids.length) return alert('请先勾选项目');
     try {
-      setLog(formatLog(await api('/api/clean/execute', { method: 'POST', body: JSON.stringify({ ids, dryRun: true }) })));
+      setLog(formatLog(await api('/api/clean/execute', { method: 'POST', body: JSON.stringify({ ids, dryRun: true, drive }) })));
     } catch (err) {
       setLog(formatLog(err.data || err.message));
     }
@@ -71,7 +78,7 @@ export default function CleanTab() {
         formatLog(
           await api('/api/clean/execute', {
             method: 'POST',
-            body: JSON.stringify({ ids, dryRun: false, confirmToken: 'CONFIRM' }),
+            body: JSON.stringify({ ids, dryRun: false, confirmToken: 'CONFIRM', drive }),
           })
         )
       );
@@ -90,6 +97,24 @@ export default function CleanTab() {
         {freshness?.reason || (stale ? '扫描结果不可用' : '扫描结果有效')}
         {freshness?.scannedAt ? ` · 扫描于 ${freshness.scannedAt}` : ''}
       </div>
+      <div className="drive-bound-bar flex flex-wrap gap-2.5 items-center mb-3">
+        <label className="text-muted text-sm">当前盘</label>
+        <select
+          className="bg-bg border border-border text-white rounded-lg px-2.5 py-2 min-w-[120px]"
+          value={drive}
+          onChange={(e) => setDrive(e.target.value)}
+          disabled={loading}
+        >
+          {(drives || []).map((d) =>
+            d.name ? (
+              <option key={d.name} value={String(d.name).toUpperCase()}>
+                {String(d.name).toUpperCase()}:
+              </option>
+            ) : null
+          )}
+        </select>
+        <span className="muted text-sm">清单仅含 {drive}: 盘路径；换盘会重新加载</span>
+      </div>
       <p className="muted">低风险项确认后可直接删除；其余先移入隔离区。默认不会自动执行。</p>
       <div className="flex flex-wrap gap-2.5 items-center mb-3">
         <button type="button" className="btn secondary" onClick={() => refresh(true)}>
@@ -106,6 +131,9 @@ export default function CleanTab() {
       {loading && <LoadingBlock title="加载清理清单…" progress={loadProgress} />}
       {error && <p className="muted">{error}</p>}
 
+      {!loading && !items.length && (
+        <p className="muted">所选盘 {drive}: 暂无匹配项（目录不存在或大小为 0）</p>
+      )}
       {!loading &&
         items.map((item) => (
           <div key={item.id} className={`item-card ${item.selectable ? '' : 'disabled'}`}>
@@ -128,7 +156,7 @@ export default function CleanTab() {
                 </span>
                 <span className="tag">{item.sizeLabel}</span>
               </div>
-              <p className="mono muted mt-1.5">{item.path}</p>
+              <p className="mono muted mt-1.5">{maskPath(item.path)}</p>
             </div>
             <div />
           </div>

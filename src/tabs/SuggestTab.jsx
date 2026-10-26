@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react';
 import LoadingBlock from '../components/LoadingBlock.jsx';
 import { useLoadProgress } from '../hooks/useLoadProgress.js';
 import { api, formatLog } from '../api.js';
+import { useDrive } from '../context/DriveContext.jsx';
+import { maskPath } from '../utils/maskPath';
 
 export default function SuggestTab() {
+  const { drives, drive, setDrive } = useDrive();
   const [items, setItems] = useState([]);
   const [values, setValues] = useState({});
   const [loading, setLoading] = useState(true);
@@ -17,7 +20,9 @@ export default function SuggestTab() {
     setError('');
     startLoadProgress();
     try {
-      const data = await api('/api/suggest' + (force ? '?refresh=1' : ''));
+      const q = new URLSearchParams({ drive });
+      if (force) q.set('refresh', '1');
+      const data = await api('/api/suggest?' + q.toString());
       const list = data.items || [];
       setItems(list);
       const init = {};
@@ -34,9 +39,10 @@ export default function SuggestTab() {
   }
 
   useEffect(() => {
-    if (items.length) return;
+    setItems([]);
     refresh(false);
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [drive]);
 
   async function dryApply(id) {
     const value = (values[id] || '').trim();
@@ -45,7 +51,7 @@ export default function SuggestTab() {
         formatLog(
           await api('/api/suggest/apply', {
             method: 'POST',
-            body: JSON.stringify({ id, dryRun: true, params: { value } }),
+            body: JSON.stringify({ id, dryRun: true, params: { value }, drive }),
           })
         )
       );
@@ -64,7 +70,7 @@ export default function SuggestTab() {
         formatLog(
           await api('/api/suggest/apply', {
             method: 'POST',
-            body: JSON.stringify({ id, dryRun: false, confirmToken: 'CONFIRM', params: { value } }),
+            body: JSON.stringify({ id, dryRun: false, confirmToken: 'CONFIRM', params: { value }, drive }),
           })
         )
       );
@@ -76,6 +82,25 @@ export default function SuggestTab() {
   return (
     <div className="panel">
       <h2>建议（可含路径迁移，非仅删除）</h2>
+
+      <div className="drive-bound-bar flex flex-wrap gap-2.5 items-center mb-3">
+        <label className="text-muted text-sm">当前盘</label>
+        <select
+          className="bg-bg border border-border text-white rounded-lg px-2.5 py-2 min-w-[120px]"
+          value={drive}
+          onChange={(e) => setDrive(e.target.value)}
+          disabled={loading}
+        >
+          {(drives || []).map((d) =>
+            d.name ? (
+              <option key={d.name} value={String(d.name).toUpperCase()}>
+                {String(d.name).toUpperCase()}:
+              </option>
+            ) : null
+          )}
+        </select>
+        <span className="muted text-sm">清单仅含 {drive}: 盘路径；换盘会重新加载</span>
+      </div>
       <p className="muted">例如把 Pip 缓存改到 D 盘。应用环境变量/配置更改仍需确认。</p>
       <div className="flex flex-wrap gap-2.5 items-center mb-3">
         <button type="button" className="btn secondary" onClick={() => refresh(true)}>
@@ -84,6 +109,9 @@ export default function SuggestTab() {
       </div>
       {loading && <LoadingBlock title="加载建议…" progress={loadProgress} />}
       {error && <p className="muted">{error}</p>}
+      {!loading && !items.length && (
+        <p className="muted">所选盘 {drive}: 暂无建议项</p>
+      )}
       {!loading &&
         items.map((item) => {
           const g = item.guidance || {};
@@ -94,7 +122,7 @@ export default function SuggestTab() {
                   {item.label} <span className="tag">{item.sizeLabel}</span>{' '}
                   <span className={`tag ${item.risk}`}>{item.risk}</span>
                 </h3>
-                <p className="mono muted">{item.relatedPath || ''}</p>
+                <p className="mono muted">{maskPath(item.relatedPath || '')}</p>
                 <div className="bg-[#0b1220] border-l-[3px] border-accent pl-3 pr-3 py-2.5 mt-2 rounded-r-lg">
                   <strong>{g.summary || ''}</strong>
                   <ol className="mt-1.5 mb-0 pl-[18px] text-muted">

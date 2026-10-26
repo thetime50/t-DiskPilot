@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import RankingBarChart from '../charts/RankingBarChart.jsx';
+import { useDrive } from '../context/DriveContext.jsx';
+import { maskPath } from '../utils/maskPath';
 
 const UI_DEBOUNCE_MS = 150;
 const POLL_MS = 200;
@@ -26,8 +28,7 @@ const STATUS_MAP = {
 };
 
 export default function ScanTab({ initialScan }) {
-  const [drives, setDrives] = useState([]);
-  const [drive, setDrive] = useState('C');
+  const { drives, setDrives, drive, setDrive } = useDrive();
   const [pathInput, setPathInput] = useState('');
   const [progress, setProgress] = useState(null);
   const [ranking, setRanking] = useState(null);
@@ -136,9 +137,6 @@ export default function ScanTab({ initialScan }) {
         const { drives: list } = await api('/api/drives');
         if (cancelled) return;
         setDrives(list || []);
-        const hasC = (list || []).some((d) => String(d.name).toUpperCase() === 'C');
-        if (hasC) setDrive('C');
-        else if (list?.[0]?.name) setDrive(list[0].name);
       } catch (err) {
         if (!cancelled) setRankingMsg(String(err.message || err));
       }
@@ -146,7 +144,7 @@ export default function ScanTab({ initialScan }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [setDrives]);
 
   useEffect(() => {
     if (initialScan?.status === 'running') {
@@ -453,7 +451,7 @@ function RankingMeta({ ranking, scanMeta }) {
       : ` · 扫描用时 ${rankingDur !== '—' ? rankingDur : totalDur}`;
   return (
     <p className="muted">
-      路径：<span className="mono">{ranking.path || ''}</span> · 合计 {ranking.totalLabel || '—'}
+      路径：<span className="mono">{maskPath(ranking.path || '')}</span> · 合计 {ranking.totalLabel || '—'}
       {durLine}
       {ranking.partial ? <span className="tag medium ml-1">部分结果</span> : null}
     </p>
@@ -481,7 +479,7 @@ function RankingTable({ ranking }) {
               </td>
               <td>{c.sizeLabel || '—'}</td>
               <td className="mono text-muted whitespace-nowrap text-right mr-10">{c.durationLabel || '—'}</td>
-              <td className="mono">{c.path}</td>
+              <td className="mono">{maskPath(c.path)}</td>
             </tr>
           ))
         ) : (
@@ -514,7 +512,7 @@ function HotspotTable({ hotspots }) {
               <span className={`tag ${h.risk}`}>{h.risk}</span>{' '}
               <span className="tag">{h.category}</span>
             </td>
-            <td className="mono">{h.path}</td>
+            <td className="mono">{maskPath(h.path)}</td>
           </tr>
         ))}
       </tbody>

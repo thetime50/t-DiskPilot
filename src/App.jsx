@@ -1,4 +1,4 @@
-﻿import { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api } from './api.js';
 import TitleBar from './components/TitleBar.jsx';
 import ScanTab from './tabs/ScanTab.jsx';
@@ -6,6 +6,7 @@ import CleanTab from './tabs/CleanTab.jsx';
 import OptimizeTab from './tabs/OptimizeTab.jsx';
 import SuggestTab from './tabs/SuggestTab.jsx';
 import QuarantineTab from './tabs/QuarantineTab.jsx';
+import { DriveProvider } from './context/DriveContext.jsx';
 
 const TABS = [
   { id: 'scan', label: '扫描' },
@@ -39,6 +40,7 @@ export default function App() {
   }, []);
 
   return (
+    <DriveProvider>
     <div className="app-root">
       <TitleBar />
       <div className="app-shell">
@@ -91,5 +93,6 @@ export default function App() {
         </p>
       </div>
     </div>
+    </DriveProvider>
   );
 }

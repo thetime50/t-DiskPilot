@@ -109,7 +109,20 @@ async function rankChildren(target, opts = {}) {
   };
 }
 
-function hotspotRules() {
+function normalizeDriveLetter(driveLetter) {
+  if (driveLetter == null || driveLetter === '') return null;
+  return String(driveLetter).replace(/:\\?$/, '').toUpperCase();
+}
+
+function pathOnDrive(p, driveLetter) {
+  if (!driveLetter) return true;
+  const letter = normalizeDriveLetter(driveLetter);
+  const m = /^([A-Za-z]):/.exec(String(p || ''));
+  return !!(m && m[1].toUpperCase() === letter);
+}
+
+/** C 盘 / 用户配置相关热点（系统盘） */
+function systemHotspotRules() {
   const localApp = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
   return [
     { id: 'user-temp', category: 'temp', label: '用户 Temp', path: process.env.TEMP || path.join(localApp, 'Temp'), risk: 'low' },
@@ -141,16 +154,44 @@ function hotspotRules() {
   ];
 }
 
-/** Measure hotspots with Node walker (no PS timeout). */
-function pathOnDrive(p, driveLetter) {
-  if (!driveLetter) return true;
-  const letter = String(driveLetter).replace(/:\\?$/, '').toUpperCase();
-  const m = /^([A-Za-z]):/.exec(String(p || ''));
-  return !!(m && m[1].toUpperCase() === letter);
+/** D/E 等数据盘：仅该盘根下常见缓存/回收站/大目录 */
+function dataDriveHotspotRules(letter) {
+  const L = letter;
+  const root = L + ':\\';
+  return [
+    { id: 'recycle-' + L, category: 'recycle', label: L + ': 回收站', path: root + '$Recycle.Bin', risk: 'medium' },
+    { id: 'temp-' + L, category: 'temp', label: L + ':\\Temp', path: root + 'Temp', risk: 'low' },
+    { id: 'tmp-' + L, category: 'temp', label: L + ':\\tmp', path: root + 'tmp', risk: 'low' },
+    { id: 'cache-' + L, category: 'temp', label: L + ':\\cache', path: root + 'cache', risk: 'low' },
+    { id: 'caches-' + L, category: 'temp', label: L + ':\\caches', path: root + 'caches', risk: 'low' },
+    { id: 'npm-cache-' + L, category: 'npm-cache', label: L + ': npm 缓存', path: root + 'caches\\npm', risk: 'low' },
+    { id: 'pip-cache-' + L, category: 'pip-cache', label: L + ': Pip 缓存', path: root + 'caches\\pip', risk: 'low' },
+    { id: 'gradle-cache-' + L, category: 'temp', label: L + ': Gradle 缓存', path: root + 'caches\\gradle', risk: 'low' },
+    { id: 'pnpm-store-' + L, category: 'pnpm-cache', label: L + ': pnpm store', path: root + 'caches\\pnpm', risk: 'low' },
+    { id: 'downloads-' + L, category: 'suggest-only', label: L + ':\\Downloads', path: root + 'Downloads', risk: 'medium' },
+    { id: 'games-' + L, category: 'suggest-only', label: L + ':\\Games', path: root + 'Games', risk: 'high' },
+    { id: 'steam-' + L, category: 'suggest-only', label: L + ':\\Steam', path: root + 'Steam', risk: 'high' },
+    { id: 'steamlibrary-' + L, category: 'suggest-only', label: L + ':\\SteamLibrary', path: root + 'SteamLibrary', risk: 'high' },
+    { id: 'docker-data-' + L, category: 'docker-data', label: L + ': Docker 数据', path: root + 'DockerDesktop', risk: 'medium' },
+    { id: 'wsl-data-' + L, category: 'suggest-only', label: L + ':\\WSL', path: root + 'WSL', risk: 'high' },
+    { id: 'program-files-' + L, category: 'suggest-only', label: L + ':\\Program Files', path: root + 'Program Files', risk: 'high' },
+    { id: 'program-files-x86-' + L, category: 'suggest-only', label: L + ':\\Program Files (x86)', path: root + 'Program Files (x86)', risk: 'high' },
+    { id: 'users-' + L, category: 'suggest-only', label: L + ':\\Users', path: root + 'Users', risk: 'high' },
+  ];
 }
 
+/**
+ * @param {string} [driveLetter] 若指定非 C 则返回该数据盘规则；否则系统盘规则
+ */
+function hotspotRules(driveLetter) {
+  const letter = normalizeDriveLetter(driveLetter);
+  if (letter && letter !== 'C') return dataDriveHotspotRules(letter);
+  return systemHotspotRules();
+}
+
+/** Measure hotspots with Node walker (no PS timeout). */
 async function measureHotspotsNode({ includeSuggestOnly = true, shouldCancel, onItem, driveLetter } = {}) {
-  const rules = hotspotRules()
+  const rules = hotspotRules(driveLetter)
     .filter((r) => includeSuggestOnly || r.category !== 'suggest-only')
     .filter((r) => pathOnDrive(r.path, driveLetter));
   const results = [];
@@ -219,7 +260,11 @@ module.exports = {
   listDrives,
   dirSizeBytes,
   rankChildren,
+  normalizeDriveLetter,
+  pathOnDrive,
   hotspotRules,
+  systemHotspotRules,
+  dataDriveHotspotRules,
   measureHotspots,
   measureHotspotsNode,
   docker,

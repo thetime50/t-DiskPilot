@@ -229,12 +229,7 @@ async function runJob(id, { drive, targetPath, includeHotspots }) {
         || (driveInfo && driveInfo.name && String(driveInfo.name).toUpperCase())
         || String(drive || '').replace(/:\\?$/, '').toUpperCase()
         || null;
-      const onDriveRules = scan.hotspotRules().filter((r) => {
-        if (r.category === 'suggest-only') return false;
-        if (!driveLetter) return true;
-        const pm = /^([A-Za-z]):/.exec(String(r.path || ''));
-        return !!(pm && pm[1].toUpperCase() === driveLetter);
-      });
+      const onDriveRules = scan.hotspotRules(driveLetter).filter((r) => r.category !== 'suggest-only');
       if (!onDriveRules.length) {
         hotspots = [];
         job.currentPath = absTarget;

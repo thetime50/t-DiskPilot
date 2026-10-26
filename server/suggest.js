@@ -3,7 +3,7 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-const { formatBytes, dirSizeBytes } = require('./scan');
+const { formatBytes, dirSizeBytes, normalizeDriveLetter } = require('./scan');
 const docker = require('./docker');
 const logger = require('./logger');
 const { createLoadProgress } = require('./loadProgress');
@@ -15,7 +15,13 @@ const loadProgress = createLoadProgress();
 const HOME = os.homedir();
 const localApp = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
 
-function suggestCatalog() {
+function suggestCatalog(driveLetter) {
+  const letter = normalizeDriveLetter(driveLetter) || 'C';
+  if (letter === 'C') return systemSuggestCatalog();
+  return dataDriveSuggestCatalog(letter);
+}
+
+function systemSuggestCatalog() {
   return [
     {
       id: 'sug-pip-cache-relocate',
@@ -73,7 +79,7 @@ function suggestCatalog() {
       guidance: {
         summary: 'Android SDK/AVD 数据通常很大；不要直接删整个目录',
         steps: [
-          '用 Android Studio → Device Manager 删除不用的模拟器',
+          '在 Android Studio → Device Manager 删除不用的模拟器',
           '可将 ANDROID_SDK_ROOT / ANDROID_AVD_HOME 指到 D 盘后迁移',
           '保留 licenses 与必要 platform；清理 system-images 中不用的 API',
         ],
@@ -186,24 +192,164 @@ function suggestCatalog() {
       applyAction: null,
       dockerRelated: true,
     },
-
   ];
 }
 
-async function buildSuggestions() {
-  const items = suggestCatalog();
+function dataDriveSuggestCatalog(letter) {
+  const L = letter;
+  const root = L + ':\\';
+  const caches = root + 'caches';
+  return [
+    {
+      id: 'sug-use-pip-cache-' + L,
+      label: '把 Pip 缓存放到 ' + L + ':\\caches\\pip',
+      category: 'relocate',
+      relatedPath: caches + '\\pip',
+      risk: 'low',
+      guidance: {
+        summary: '将 PIP_CACHE_DIR 指到本盘，减轻系统盘压力',
+        steps: [
+          '创建 ' + caches + '\\pip',
+          '设置用户环境变量 PIP_CACHE_DIR = ' + caches + '\\pip',
+          '验证: pip cache dir',
+        ],
+        commands: [
+          'New-Item -ItemType Directory -Force -Path "' + caches + '\\pip"',
+          '[Environment]::SetEnvironmentVariable("PIP_CACHE_DIR","' + caches + '\\pip","User")',
+          'pip cache dir',
+        ],
+      },
+      applyAction: 'set-env-pip-cache',
+      applyDefault: { value: caches + '\\pip' },
+    },
+    {
+      id: 'sug-use-npm-cache-' + L,
+      label: '把 npm 缓存放到 ' + L + ':\\caches\\npm',
+      category: 'relocate',
+      relatedPath: caches + '\\npm',
+      risk: 'low',
+      guidance: {
+        summary: 'npm config set cache 到本盘',
+        steps: [
+          '创建 ' + caches + '\\npm',
+          'npm config set cache "' + caches + '\\npm" --global',
+          '验证: npm config get cache',
+        ],
+        commands: [
+          'New-Item -ItemType Directory -Force -Path "' + caches + '\\npm"',
+          'npm config set cache "' + caches + '\\npm" --global',
+          'npm config get cache',
+        ],
+      },
+      applyAction: 'npm-set-cache',
+      applyDefault: { value: caches + '\\npm' },
+    },
+    {
+      id: 'sug-use-gradle-' + L,
+      label: '把 GRADLE_USER_HOME 放到 ' + L + ':\\caches\\gradle',
+      category: 'relocate',
+      relatedPath: caches + '\\gradle',
+      risk: 'low',
+      guidance: {
+        summary: 'Gradle 用户目录迁到本盘',
+        steps: [
+          '创建 ' + caches + '\\gradle',
+          '设置 GRADLE_USER_HOME = ' + caches + '\\gradle',
+        ],
+        commands: [
+          'New-Item -ItemType Directory -Force -Path "' + caches + '\\gradle"',
+          '[Environment]::SetEnvironmentVariable("GRADLE_USER_HOME","' + caches + '\\gradle","User")',
+        ],
+      },
+      applyAction: 'set-env-gradle-home',
+      applyDefault: { value: caches + '\\gradle' },
+    },
+    {
+      id: 'sug-review-downloads-' + L,
+      label: '复查 ' + L + ':\\Downloads',
+      category: 'review',
+      relatedPath: root + 'Downloads',
+      risk: 'medium',
+      guidance: {
+        summary: '下载目录常堆积安装包与压缩包，可手工归档或删除',
+        steps: [
+          '按修改时间排序，删除明显过期安装包',
+          '大文件先确认再删，勿批量盲删',
+        ],
+        commands: [],
+      },
+      applyAction: null,
+    },
+    {
+      id: 'sug-review-games-' + L,
+      label: '复查 ' + L + ':\\Games / Steam',
+      category: 'review',
+      relatedPath: root + 'Games',
+      risk: 'high',
+      guidance: {
+        summary: '游戏库体积大；请在 Steam / 启动器内卸载，勿直接删目录',
+        steps: [
+          'Steam → 设置 → 存储 → 管理库文件夹',
+          '卸载不用的游戏后再回收空间',
+          '同时检查 ' + root + 'Steam 与 ' + root + 'SteamLibrary',
+        ],
+        commands: [],
+      },
+      applyAction: null,
+    },
+    {
+      id: 'sug-review-steamlib-' + L,
+      label: '复查 ' + L + ':\\SteamLibrary',
+      category: 'review',
+      relatedPath: root + 'SteamLibrary',
+      risk: 'high',
+      guidance: {
+        summary: 'Steam 库文件夹；请在客户端管理',
+        steps: ['在 Steam 存储管理中卸载或迁移游戏'],
+        commands: [],
+      },
+      applyAction: null,
+    },
+    {
+      id: 'sug-review-docker-' + L,
+      label: '复查 ' + L + ': Docker / WSL 数据',
+      category: 'review',
+      relatedPath: root + 'DockerDesktop',
+      risk: 'high',
+      guidance: {
+        summary: '若 Docker 数据已在本盘，勿直接删 vhdx；用 Docker Desktop 设置管理',
+        steps: [
+          'Docker Desktop → Settings → Resources → Disk image location',
+          '同时检查 ' + root + 'WSL',
+        ],
+        commands: ['wsl -l -v', 'docker system df'],
+      },
+      applyAction: null,
+    },
+  ].map((item) => ({ ...item, drive: L }));
+}
+
+async function buildSuggestions(driveLetter) {
+  const letter = normalizeDriveLetter(driveLetter) || 'C';
+  const items = suggestCatalog(letter);
   const out = [];
   let dockerInfo = null;
   loadProgress.begin(items.length + 1, '准备建议…');
   let step = 0;
   try {
-  loadProgress.step(++step, '查询 Docker / WSL…');
-  try {
-    dockerInfo = await docker.collectDockerHotspots({
-      dirSizeBytes,
-      formatBytes,
-    });
-  } catch (_) {
+  const needsDocker = items.some((i) => i.dockerRelated);
+  if (needsDocker) {
+    loadProgress.step(++step, '查询 Docker / WSL');
+    try {
+      dockerInfo = await docker.collectDockerHotspots({
+        dirSizeBytes,
+        formatBytes,
+      });
+    } catch (_) {
+      dockerInfo = null;
+    }
+  } else {
+    loadProgress.step(++step, letter + ': 数据盘建议');
     dockerInfo = null;
   }
 
@@ -272,13 +418,14 @@ function getLoadProgress() {
   return loadProgress.snapshot();
 }
 
-async function applySuggestion({ id, dryRun = true, confirmToken, params = {} } = {}) {
+async function applySuggestion({ id, dryRun = true, confirmToken, params = {}, drive } = {}) {
   if (!dryRun && confirmToken !== 'CONFIRM') {
     const err = new Error('需要 confirmToken === "CONFIRM" 才能真实执行');
     err.code = 'NEED_CONFIRM';
     throw err;
   }
-  const item = suggestCatalog().find((s) => s.id === id);
+  const letter = normalizeDriveLetter(drive) || 'C';
+  const item = suggestCatalog(letter).find((s) => s.id === id);
   if (!item) throw new Error('未知建议');
   if (!item.applyAction) throw new Error('该建议仅供参考，无自动应用动作');
 
@@ -334,16 +481,22 @@ async function setUserEnv(name, value) {
 }
 
 
-function getCachedResult() {
-  return resultCache.get();
+function cacheKey(drive) {
+  return normalizeDriveLetter(drive) || 'C';
 }
 
-function setCachedResult(value) {
-  return resultCache.set(value);
+function getCachedResult(drive) {
+  return resultCache.get(cacheKey(drive));
 }
 
-function clearResultCache() {
-  resultCache.clear();
+function setCachedResult(drive, value) {
+  if (arguments.length === 1) return resultCache.set('C', drive);
+  return resultCache.set(cacheKey(drive), value);
+}
+
+function clearResultCache(drive) {
+  if (drive == null || drive === '') resultCache.clear();
+  else resultCache.clear(cacheKey(drive));
 }
 
 module.exports = {

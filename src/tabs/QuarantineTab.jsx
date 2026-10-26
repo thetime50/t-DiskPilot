@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { api, formatLog } from '../api.js';
+import { maskPath } from '../utils/maskPath';
 
 export default function QuarantineTab({ quarantineRoot }) {
   const [root, setRoot] = useState(quarantineRoot || '—');
@@ -74,7 +75,7 @@ export default function QuarantineTab({ quarantineRoot }) {
         <div key={it.name} className="item-card" style={{ gridTemplateColumns: '1fr auto' }}>
           <div>
             <h3>{it.name}</h3>
-            <p className="mono muted">{it.path}</p>
+            <p className="mono muted">{maskPath(it.path)}</p>
             {it.meta ? <p className="muted">来源：{it.meta.src || ''}</p> : null}
           </div>
           <div className="flex flex-wrap gap-2.5">

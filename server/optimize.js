@@ -7,7 +7,7 @@ const { execFile } = require('child_process');
 const { promisify } = require('util');
 const execFileAsync = promisify(execFile);
 const logger = require('./logger');
-const { formatBytes, dirSizeBytes } = require('./scan');
+const { formatBytes, dirSizeBytes, normalizeDriveLetter } = require('./scan');
 const { createLoadProgress } = require('./loadProgress');
 const { createResultCache } = require('./resultCache');
 const resultCache = createResultCache();
@@ -18,7 +18,13 @@ const HOME = os.homedir();
 const localApp = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
 const WINDIR = process.env.WINDIR || 'C:\\Windows';
 
-function optimizeCatalog() {
+function optimizeCatalog(driveLetter) {
+  const letter = normalizeDriveLetter(driveLetter) || 'C';
+  const items = letter === 'C' ? systemOptimizeCatalog() : dataDriveOptimizeCatalog(letter);
+  return items.map((x) => ({ ...x, drive: letter, checked: false }));
+}
+
+function systemOptimizeCatalog() {
   return [
     {
       id: 'opt-delivery-cache',
@@ -43,11 +49,12 @@ function optimizeCatalog() {
     {
       id: 'opt-recycle-bin-info',
       label: '清空回收站（需确认）',
-      description: '清空当前用户回收站',
+      description: '清空当前用户回收站（所有盘）',
       path: null,
       risk: 'medium',
       mode: 'direct-after-confirm',
       action: 'empty-recycle-bin',
+      driveLetter: null,
       notes: '不可进隔离区；确认后直接清空',
     },
     {
@@ -60,7 +67,55 @@ function optimizeCatalog() {
       action: 'delete-thumbcache',
       notes: '仅删除 thumbcache_*.db',
     },
-  ].map((x) => ({ ...x, checked: false }));
+  ];
+}
+
+function dataDriveOptimizeCatalog(letter) {
+  const L = letter;
+  const root = L + ':\\';
+  return [
+    {
+      id: 'opt-recycle-' + L,
+      label: '清空 ' + L + ': 回收站（需确认）',
+      description: '仅清空 ' + L + ': 盘回收站',
+      path: root + '$Recycle.Bin',
+      risk: 'medium',
+      mode: 'direct-after-confirm',
+      action: 'empty-recycle-bin',
+      driveLetter: L,
+      notes: '不可进隔离区；确认后直接清空该盘回收站',
+    },
+    {
+      id: 'opt-temp-' + L,
+      label: '清理 ' + L + ':\\Temp',
+      description: '清空该盘 Temp 目录（跳过占用）',
+      path: root + 'Temp',
+      risk: 'low',
+      mode: 'direct-after-confirm',
+      action: 'empty-dir',
+      notes: '仅针对所选盘',
+    },
+    {
+      id: 'opt-tmp-' + L,
+      label: '清理 ' + L + ':\\tmp',
+      description: '清空该盘 tmp 目录',
+      path: root + 'tmp',
+      risk: 'low',
+      mode: 'direct-after-confirm',
+      action: 'empty-dir',
+      notes: '仅针对所选盘',
+    },
+    {
+      id: 'opt-caches-' + L,
+      label: '清理 ' + L + ':\\caches',
+      description: '清空该盘 caches 目录内容',
+      path: root + 'caches',
+      risk: 'low',
+      mode: 'direct-after-confirm',
+      action: 'empty-dir',
+      notes: '确认其中没有仍需保留的迁移缓存',
+    },
+  ];
 }
 
 async function storageSenseStatus() {
@@ -87,8 +142,9 @@ if (-not (Test-Path $path)) {
   }
 }
 
-async function buildChecklist() {
-  const items = optimizeCatalog();
+async function buildChecklist(driveLetter) {
+  const letter = normalizeDriveLetter(driveLetter) || 'C';
+  const items = optimizeCatalog(letter);
   const out = [];
   checklistProgress.begin(items.length, '准备优化清单…');
   let step = 0;
@@ -165,13 +221,14 @@ async function emptyDirSafe(dirPath, { dryRun }) {
   return { deleted, skipped, dryRun, errors };
 }
 
-async function executeOptimize({ ids = [], dryRun = true, confirmToken } = {}) {
+async function executeOptimize({ ids = [], dryRun = true, confirmToken, drive } = {}) {
   if (!dryRun && confirmToken !== 'CONFIRM') {
     const err = new Error('需要 confirmToken === "CONFIRM" 才能真实执行');
     err.code = 'NEED_CONFIRM';
     throw err;
   }
-  const catalog = optimizeCatalog();
+  const letter = normalizeDriveLetter(drive) || 'C';
+  const catalog = optimizeCatalog(letter);
   const byId = new Map(catalog.map((c) => [c.id, c]));
   const results = [];
 
@@ -201,15 +258,19 @@ async function executeOptimize({ ids = [], dryRun = true, confirmToken } = {}) {
         }
         detail = { files: files.length, dryRun };
       } else if (item.action === 'empty-recycle-bin') {
+        const dl = item.driveLetter ? String(item.driveLetter).toUpperCase() : null;
+        const cmd = dl
+          ? 'Clear-RecycleBin -DriveLetter ' + dl + ' -Force -ErrorAction SilentlyContinue'
+          : 'Clear-RecycleBin -Force -ErrorAction SilentlyContinue';
         if (dryRun) {
-          detail = { dryRun: true, would: 'Clear-RecycleBin' };
+          detail = { dryRun: true, would: cmd, driveLetter: dl };
         } else {
           await execFileAsync(
             'powershell.exe',
-            ['-NoProfile', '-Command', 'Clear-RecycleBin -Force -ErrorAction SilentlyContinue'],
+            ['-NoProfile', '-Command', cmd],
             { windowsHide: true }
           );
-          detail = { dryRun: false, cleared: true };
+          detail = { dryRun: false, cleared: true, driveLetter: dl };
         }
       } else if (item.action === 'storage-sense-status') {
         const status = await storageSenseStatus();
@@ -240,16 +301,22 @@ New-ItemProperty -Path $path -Name '01' -Value 1 -PropertyType DWord -Force | Ou
 }
 
 
-function getCachedResult() {
-  return resultCache.get();
+function cacheKey(drive) {
+  return normalizeDriveLetter(drive) || 'C';
 }
 
-function setCachedResult(value) {
-  return resultCache.set(value);
+function getCachedResult(drive) {
+  return resultCache.get(cacheKey(drive));
 }
 
-function clearResultCache() {
-  resultCache.clear();
+function setCachedResult(drive, value) {
+  if (arguments.length === 1) return resultCache.set('C', drive);
+  return resultCache.set(cacheKey(drive), value);
+}
+
+function clearResultCache(drive) {
+  if (drive == null || drive === '') resultCache.clear();
+  else resultCache.clear(cacheKey(drive));
 }
 
 module.exports = {

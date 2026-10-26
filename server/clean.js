@@ -9,7 +9,7 @@ const execFileAsync = promisify(execFile);
 const config = require('./config');
 const logger = require('./logger');
 const quarantine = require('./quarantine');
-const { formatBytes, dirSizeBytes } = require('./scan');
+const { formatBytes, dirSizeBytes, normalizeDriveLetter } = require('./scan');
 const { createLoadProgress } = require('./loadProgress');
 const { createResultCache } = require('./resultCache');
 const resultCache = createResultCache();
@@ -20,8 +20,17 @@ const docker = require('./docker');
 const HOME = os.homedir();
 const localApp = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
 
-/** Catalog of cleanable items. Each is individually selectable. */
-function cleanCatalog() {
+/** Catalog of cleanable items. Each is individually selectable. Bound to drive. */
+function cleanCatalog(driveLetter) {
+  const letter = normalizeDriveLetter(driveLetter) || 'C';
+  const items = letter === 'C' ? systemCleanCatalog() : dataDriveCleanCatalog(letter);
+  return items.map((item) => {
+    const mode = config.LOW_RISK_CATEGORIES.has(item.category) ? 'direct' : 'quarantine';
+    return { ...item, mode, drive: letter, checked: false };
+  });
+}
+
+function systemCleanCatalog() {
   return [
     {
       id: 'clean-user-temp',
@@ -30,7 +39,7 @@ function cleanCatalog() {
       description: '清空 %TEMP% / Local\\Temp 下可删文件（跳过正在占用的）',
       path: process.env.TEMP || path.join(localApp, 'Temp'),
       risk: 'low',
-      mode: 'direct', // low-risk: direct delete after confirm
+      mode: 'direct',
       action: 'empty-dir',
     },
     {
@@ -103,7 +112,6 @@ function cleanCatalog() {
       mode: 'quarantine',
       action: 'empty-dir',
     },
-
     {
       id: 'clean-docker-build-cache',
       category: 'docker-cache',
@@ -137,16 +145,89 @@ function cleanCatalog() {
       action: 'docker-prune',
       pruneKind: 'unused-images',
     },
-
-  ].map((item) => {
-    // Enforce policy from config
-    const mode = config.LOW_RISK_CATEGORIES.has(item.category) ? 'direct' : 'quarantine';
-    return { ...item, mode, checked: false };
-  });
+  ];
 }
 
-async function buildChecklist() {
-  const items = cleanCatalog();
+function dataDriveCleanCatalog(letter) {
+  const L = letter;
+  const root = L + ':\\';
+  return [
+    {
+      id: 'clean-temp-' + L,
+      category: 'temp',
+      label: '清理 ' + L + ':\\Temp',
+      description: '清空该盘 Temp 目录内容（跳过占用文件）',
+      path: root + 'Temp',
+      risk: 'low',
+      mode: 'direct',
+      action: 'empty-dir',
+    },
+    {
+      id: 'clean-tmp-' + L,
+      category: 'temp',
+      label: '清理 ' + L + ':\\tmp',
+      description: '清空该盘 tmp 目录内容',
+      path: root + 'tmp',
+      risk: 'low',
+      mode: 'direct',
+      action: 'empty-dir',
+    },
+    {
+      id: 'clean-cache-' + L,
+      category: 'temp',
+      label: '清理 ' + L + ':\\cache',
+      description: '清空该盘 cache 目录内容',
+      path: root + 'cache',
+      risk: 'low',
+      mode: 'direct',
+      action: 'empty-dir',
+    },
+    {
+      id: 'clean-npm-cache-' + L,
+      category: 'npm-cache',
+      label: '清理 ' + L + ': npm 缓存',
+      description: '删除 ' + root + 'caches\\npm',
+      path: root + 'caches\\npm',
+      risk: 'low',
+      mode: 'direct',
+      action: 'empty-dir',
+    },
+    {
+      id: 'clean-pip-cache-' + L,
+      category: 'pip-cache',
+      label: '清理 ' + L + ': Pip 缓存',
+      description: '删除 ' + root + 'caches\\pip',
+      path: root + 'caches\\pip',
+      risk: 'low',
+      mode: 'direct',
+      action: 'empty-dir',
+    },
+    {
+      id: 'clean-gradle-cache-' + L,
+      category: 'temp',
+      label: '清理 ' + L + ': Gradle 缓存',
+      description: '删除 ' + root + 'caches\\gradle',
+      path: root + 'caches\\gradle',
+      risk: 'low',
+      mode: 'direct',
+      action: 'empty-dir',
+    },
+    {
+      id: 'clean-caches-' + L,
+      category: 'temp',
+      label: '清理 ' + L + ':\\caches',
+      description: '清空该盘 caches 根目录内容（含子缓存）',
+      path: root + 'caches',
+      risk: 'low',
+      mode: 'direct',
+      action: 'empty-dir',
+    },
+  ];
+}
+
+async function buildChecklist(driveLetter) {
+  const letter = normalizeDriveLetter(driveLetter) || 'C';
+  const items = cleanCatalog(letter);
   const out = [];
   let df = null;
   const needsDf = items.some((i) => i.action === 'docker-prune');
@@ -279,13 +360,14 @@ async function quarantineThenEmpty(dirPath, { dryRun = true } = {}) {
  * Execute selected clean items.
  * Requires confirmToken === 'CONFIRM' and dryRun flag.
  */
-async function executeClean({ ids = [], dryRun = true, confirmToken } = {}) {
+async function executeClean({ ids = [], dryRun = true, confirmToken, drive } = {}) {
   if (!dryRun && confirmToken !== 'CONFIRM') {
     const err = new Error('需要 confirmToken === "CONFIRM" 才能真实执行');
     err.code = 'NEED_CONFIRM';
     throw err;
   }
-  const catalog = cleanCatalog();
+  const letter = normalizeDriveLetter(drive) || 'C';
+  const catalog = cleanCatalog(letter);
   const byId = new Map(catalog.map((c) => [c.id, c]));
   const results = [];
   for (const id of ids) {
@@ -327,16 +409,22 @@ async function executeClean({ ids = [], dryRun = true, confirmToken } = {}) {
 }
 
 
-function getCachedResult() {
-  return resultCache.get();
+function cacheKey(drive) {
+  return normalizeDriveLetter(drive) || 'C';
 }
 
-function setCachedResult(value) {
-  return resultCache.set(value);
+function getCachedResult(drive) {
+  return resultCache.get(cacheKey(drive));
 }
 
-function clearResultCache() {
-  resultCache.clear();
+function setCachedResult(drive, value) {
+  if (arguments.length === 1) return resultCache.set('C', drive);
+  return resultCache.set(cacheKey(drive), value);
+}
+
+function clearResultCache(drive) {
+  if (drive == null || drive === '') resultCache.clear();
+  else resultCache.clear(cacheKey(drive));
 }
 
 module.exports = {

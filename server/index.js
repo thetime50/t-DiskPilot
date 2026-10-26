@@ -7,6 +7,7 @@ const cors = require('cors');
 const config = require('./config');
 const logger = require('./logger');
 const scan = require('./scan');
+const { normalizeDriveLetter } = scan;
 const clean = require('./clean');
 const optimize = require('./optimize');
 const suggest = require('./suggest');
@@ -29,7 +30,6 @@ app.get('/api/health', (_req, res) => {
     name: 't-DiskPilot',
     version: '1.2.0',
     quarantineRoot: quarantine.getRoot(),
-    home: config.HOME,
     scan: scanJob.snapshot(),
   });
 });
@@ -145,16 +145,17 @@ app.get('/api/clean/checklist/progress', (_req, res) => {
 
 app.get('/api/clean/checklist', async (req, res) => {
   try {
+    const drive = normalizeDriveLetter(req.query.drive) || 'C';
     const force = String(req.query.refresh || '') === '1' || String(req.query.refresh || '') === 'true';
     if (!force) {
-      const hit = clean.getCachedResult();
+      const hit = clean.getCachedResult(drive);
       if (hit && hit.value) {
-        return res.json({ items: hit.value, cached: true, cachedAt: hit.at, policy: '低风险可直接删；其余先隔离' });
+        return res.json({ items: hit.value, drive, cached: true, cachedAt: hit.at, policy: '低风险可直接删；其余先隔离' });
       }
     }
-    const items = await clean.buildChecklist();
-    clean.setCachedResult(items);
-    res.json({ items, cached: false, policy: '低风险可直接删；其余先隔离' });
+    const items = await clean.buildChecklist(drive);
+    clean.setCachedResult(drive, items);
+    res.json({ items, drive, cached: false, policy: '低风险可直接删；其余先隔离' });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -162,16 +163,17 @@ app.get('/api/clean/checklist', async (req, res) => {
 
 app.post('/api/clean/execute', async (req, res) => {
   try {
-    const { ids = [], dryRun = true, confirmToken } = req.body || {};
+    const { ids = [], dryRun = true, confirmToken, drive: bodyDrive } = req.body || {};
+    const drive = normalizeDriveLetter(bodyDrive) || 'C';
     if (dryRun === false) {
       const fr = scanPersist.freshness();
       if (!fr.canAct) {
         return res.status(403).json({ error: fr.reason, code: 'SCAN_STALE', freshness: fr });
       }
     }
-    const result = await clean.executeClean({ ids, dryRun: dryRun !== false, confirmToken });
-    if (dryRun === false) clean.clearResultCache();
-    res.json(result);
+    const result = await clean.executeClean({ ids, dryRun: dryRun !== false, confirmToken, drive });
+    if (dryRun === false) clean.clearResultCache(drive);
+    res.json({ ...result, drive });
   } catch (err) {
     const status = err.code === 'NEED_CONFIRM' ? 400 : 500;
     res.status(status).json({ error: String(err.message || err), code: err.code });
@@ -184,16 +186,17 @@ app.get('/api/optimize/checklist/progress', (_req, res) => {
 
 app.get('/api/optimize/checklist', async (req, res) => {
   try {
+    const drive = normalizeDriveLetter(req.query.drive) || 'C';
     const force = String(req.query.refresh || '') === '1' || String(req.query.refresh || '') === 'true';
     if (!force) {
-      const hit = optimize.getCachedResult();
+      const hit = optimize.getCachedResult(drive);
       if (hit && hit.value) {
-        return res.json({ items: hit.value, cached: true, cachedAt: hit.at });
+        return res.json({ items: hit.value, drive, cached: true, cachedAt: hit.at });
       }
     }
-    const items = await optimize.buildChecklist();
-    optimize.setCachedResult(items);
-    res.json({ items, cached: false });
+    const items = await optimize.buildChecklist(drive);
+    optimize.setCachedResult(drive, items);
+    res.json({ items, drive, cached: false });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -201,16 +204,17 @@ app.get('/api/optimize/checklist', async (req, res) => {
 
 app.post('/api/optimize/execute', async (req, res) => {
   try {
-    const { ids = [], dryRun = true, confirmToken } = req.body || {};
+    const { ids = [], dryRun = true, confirmToken, drive: bodyDrive } = req.body || {};
+    const drive = normalizeDriveLetter(bodyDrive) || 'C';
     if (dryRun === false) {
       const fr = scanPersist.freshness();
       if (!fr.canAct) {
         return res.status(403).json({ error: fr.reason, code: 'SCAN_STALE', freshness: fr });
       }
     }
-    const result = await optimize.executeOptimize({ ids, dryRun: dryRun !== false, confirmToken });
-    if (dryRun === false) optimize.clearResultCache();
-    res.json(result);
+    const result = await optimize.executeOptimize({ ids, dryRun: dryRun !== false, confirmToken, drive });
+    if (dryRun === false) optimize.clearResultCache(drive);
+    res.json({ ...result, drive });
   } catch (err) {
     const status = err.code === 'NEED_CONFIRM' ? 400 : 500;
     res.status(status).json({ error: String(err.message || err), code: err.code });
@@ -223,16 +227,17 @@ app.get('/api/suggest/progress', (_req, res) => {
 
 app.get('/api/suggest', async (req, res) => {
   try {
+    const drive = normalizeDriveLetter(req.query.drive) || 'C';
     const force = String(req.query.refresh || '') === '1' || String(req.query.refresh || '') === 'true';
     if (!force) {
-      const hit = suggest.getCachedResult();
+      const hit = suggest.getCachedResult(drive);
       if (hit && hit.value) {
-        return res.json({ items: hit.value, cached: true, cachedAt: hit.at });
+        return res.json({ items: hit.value, drive, cached: true, cachedAt: hit.at });
       }
     }
-    const items = await suggest.buildSuggestions();
-    suggest.setCachedResult(items);
-    res.json({ items, cached: false });
+    const items = await suggest.buildSuggestions(drive);
+    suggest.setCachedResult(drive, items);
+    res.json({ items, drive, cached: false });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
@@ -240,10 +245,11 @@ app.get('/api/suggest', async (req, res) => {
 
 app.post('/api/suggest/apply', async (req, res) => {
   try {
-    const { id, dryRun = true, confirmToken, params } = req.body || {};
-    const result = await suggest.applySuggestion({ id, dryRun: dryRun !== false, confirmToken, params });
-    if (dryRun === false) suggest.clearResultCache();
-    res.json(result);
+    const { id, dryRun = true, confirmToken, params, drive: bodyDrive } = req.body || {};
+    const drive = normalizeDriveLetter(bodyDrive) || 'C';
+    const result = await suggest.applySuggestion({ id, dryRun: dryRun !== false, confirmToken, params, drive });
+    if (dryRun === false) suggest.clearResultCache(drive);
+    res.json({ ...result, drive });
   } catch (err) {
     const status = err.code === 'NEED_CONFIRM' ? 400 : 500;
     res.status(status).json({ error: String(err.message || err), code: err.code });
