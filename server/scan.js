@@ -142,9 +142,22 @@ function hotspotRules() {
 }
 
 /** Measure hotspots with Node walker (no PS timeout). */
-async function measureHotspotsNode({ includeSuggestOnly = true, shouldCancel, onItem } = {}) {
-  const rules = hotspotRules().filter((r) => includeSuggestOnly || r.category !== 'suggest-only');
+function pathOnDrive(p, driveLetter) {
+  if (!driveLetter) return true;
+  const letter = String(driveLetter).replace(/:\\?$/, '').toUpperCase();
+  const m = /^([A-Za-z]):/.exec(String(p || ''));
+  return !!(m && m[1].toUpperCase() === letter);
+}
+
+async function measureHotspotsNode({ includeSuggestOnly = true, shouldCancel, onItem, driveLetter } = {}) {
+  const rules = hotspotRules()
+    .filter((r) => includeSuggestOnly || r.category !== 'suggest-only')
+    .filter((r) => pathOnDrive(r.path, driveLetter));
   const results = [];
+  // No rules on this drive: do not measure off-drive caches / docker
+  if (driveLetter && rules.length === 0) {
+    return results;
+  }
   for (const rule of rules) {
     if (shouldCancel && shouldCancel()) break;
     if (onItem) onItem(rule.path);
@@ -185,6 +198,7 @@ async function measureHotspotsNode({ includeSuggestOnly = true, shouldCancel, on
       const key = String(h.path || '').toLowerCase();
       if (key && seen.has(key)) continue;
       if (!includeSuggestOnly && h.category === 'suggest-only') continue;
+      if (!pathOnDrive(h.path, driveLetter)) continue;
       seen.add(key);
       results.push(h);
     }

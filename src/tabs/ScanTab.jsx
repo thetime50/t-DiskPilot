@@ -93,11 +93,11 @@ export default function ScanTab({ initialScan }) {
               setScanMeta(result);
               setRankingMsg('');
             }
-            if (result.hotspots) {
+            if (Array.isArray(result.hotspots)) {
               setHotspots(result.hotspots);
-              setHotspotMsg('');
+              setHotspotMsg(result.hotspots.length ? '' : '所选盘无匹配的热点规则');
             } else if (p.status === 'cancelled') {
-              setHotspotMsg('已取消，热点未测量');
+              setHotspotMsg('已取消，热点未完成');
             }
           }
         } catch (err) {
@@ -196,6 +196,7 @@ export default function ScanTab({ initialScan }) {
   async function startScan(body) {
     setRanking(null);
     setHotspots(null);
+    setScanMeta(null);
     setRankingMsg('扫描中…');
     setHotspotMsg(body.path ? '路径扫描不测热点' : '扫描中…');
     applyProgress({
@@ -286,9 +287,9 @@ export default function ScanTab({ initialScan }) {
   async function scanHotspotsOnly() {
     setHotspotMsg('扫描热点中…');
     try {
-      const data = await api('/api/hotspots');
-      setHotspots(data.hotspots);
-      setHotspotMsg('');
+      const data = await api('/api/hotspots?drive=' + encodeURIComponent(drive));
+      setHotspots(data.hotspots || []);
+      setHotspotMsg((data.hotspots || []).length ? '' : '所选盘无匹配的热点规则');
     } catch (err) {
       setHotspotMsg(String(err.message || err));
     }

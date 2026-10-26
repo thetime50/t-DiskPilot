@@ -221,30 +221,40 @@ async function runJob(id, { drive, targetPath, includeHotspots }) {
       scannedAt: new Date().toISOString(),
     };
 
-    // Hotspots after ranking (still cancellable between items)
+    // Hotspots after ranking — only rules whose path is on the scanned drive
     let hotspots = null;
     if (includeHotspots && !targetPath) {
-      job.currentPath = '热点规则测量中…';
-      job.breadcrumb = 'hotspots';
-      // Skip suggest-only giants (AppData/.android/…) — already visible in ranking
-      hotspots = await scan.measureHotspotsNode({
-        includeSuggestOnly: false,
-        shouldCancel: () => job._cancel || job.id !== id,
-        onItem: (label) => {
-          job.currentPath = label;
-        },
+      const m = /^([A-Za-z]):/.exec(String(absTarget || ''));
+      const driveLetter = (m && m[1].toUpperCase())
+        || (driveInfo && driveInfo.name && String(driveInfo.name).toUpperCase())
+        || String(drive || '').replace(/:\\?$/, '').toUpperCase()
+        || null;
+      const onDriveRules = scan.hotspotRules().filter((r) => {
+        if (r.category === 'suggest-only') return false;
+        if (!driveLetter) return true;
+        const pm = /^([A-Za-z]):/.exec(String(r.path || ''));
+        return !!(pm && pm[1].toUpperCase() === driveLetter);
       });
+      if (!onDriveRules.length) {
+        hotspots = [];
+        job.currentPath = absTarget;
+        job.breadcrumb = '';
+      } else {
+        job.currentPath = '热点规则 · ' + driveLetter + ':';
+        job.breadcrumb = 'hotspots';
+        hotspots = await scan.measureHotspotsNode({
+          includeSuggestOnly: false,
+          driveLetter,
+          shouldCancel: () => job._cancel || job.id !== id,
+          onItem: (label) => {
+            job.currentPath = '热点 · ' + label;
+          },
+        });
+      }
     }
 
     if (job.id !== id) return;
 
-    if (job._cancel) {
-      job.status = 'cancelled';
-    } else {
-      try { scanPersist.saveScanResult(job.result); } catch (_) { /* ignore persist errors */ }
-      job.status = 'done';
-      job.percent = 100;
-    }
     job.finishedAt = new Date().toISOString();
     job.durationMs = job.startedAt
       ? Date.now() - Date.parse(job.startedAt)
@@ -262,6 +272,13 @@ async function runJob(id, { drive, targetPath, includeHotspots }) {
       hotspots,
       mode: targetPath ? 'path' : 'drive',
     };
+    if (job._cancel) {
+      job.status = 'cancelled';
+    } else {
+      try { scanPersist.saveScanResult(job.result); } catch (_) { /* ignore persist errors */ }
+      job.status = 'done';
+      job.percent = 100;
+    }
   } catch (err) {
     if (job.id !== id) return;
     job.status = 'error';

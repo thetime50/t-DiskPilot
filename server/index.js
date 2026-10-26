@@ -51,6 +51,11 @@ app.post('/api/scan/start', async (req, res) => {
   try {
     const body = req.body || {};
     const includeHotspots = body.hotspots !== false && body.hotspots !== 0;
+    // New scan: drop previous scan persist + analysis caches
+    try { scanPersist.clearScanCache(); } catch (_) {}
+    try { clean.clearResultCache(); } catch (_) {}
+    try { optimize.clearResultCache(); } catch (_) {}
+    try { suggest.clearResultCache(); } catch (_) {}
     const snap = await scanJob.startJob({
       drive: body.drive || 'C',
       targetPath: body.path || null,
@@ -72,6 +77,7 @@ app.get('/api/scan/progress', (_req, res) => {
 app.get('/api/scan/result', (_req, res) => {
   const snap = scanJob.snapshot();
   res.json({ ...snap, result: scanJob.getResult() });
+});
 
 app.get('/api/scan/cached', (_req, res) => {
   const cached = scanPersist.loadScanResult();
@@ -82,6 +88,12 @@ app.get('/api/scan/freshness', (_req, res) => {
   res.json(scanPersist.freshness());
 });
 
+app.delete('/api/scan/cache', (_req, res) => {
+  const cleared = scanPersist.clearScanCache();
+  try { clean.clearResultCache(); } catch (_) {}
+  try { optimize.clearResultCache(); } catch (_) {}
+  try { suggest.clearResultCache(); } catch (_) {}
+  res.json({ ok: true, ...cleared });
 });
 
 app.post('/api/scan/cancel', (_req, res) => {
@@ -94,6 +106,10 @@ app.get('/api/scan', async (req, res) => {
     const drive = req.query.drive || 'C';
     const targetPath = req.query.path;
     const includeHotspots = req.query.hotspots !== '0';
+    try { scanPersist.clearScanCache(); } catch (_) {}
+    try { clean.clearResultCache(); } catch (_) {}
+    try { optimize.clearResultCache(); } catch (_) {}
+    try { suggest.clearResultCache(); } catch (_) {}
     const snap = await scanJob.startJob({
       drive: String(drive),
       targetPath: targetPath ? String(targetPath) : null,
@@ -111,10 +127,13 @@ app.get('/api/scan', async (req, res) => {
   }
 });
 
-app.get('/api/hotspots', async (_req, res) => {
+app.get('/api/hotspots', async (req, res) => {
   try {
-    const hotspots = await scan.measureHotspots({ includeSuggestOnly: true });
-    res.json({ hotspots });
+    const driveLetter = req.query.drive
+      ? String(req.query.drive).replace(/:\\?$/, '').toUpperCase()
+      : null;
+    const hotspots = await scan.measureHotspots({ includeSuggestOnly: true, driveLetter });
+    res.json({ hotspots, drive: driveLetter });
   } catch (err) {
     res.status(500).json({ error: String(err.message || err) });
   }
