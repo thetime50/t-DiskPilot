@@ -1,0 +1,238 @@
+'use strict';
+
+const path = require('path');
+const scan = require('./scan');
+const { walkRank } = require('./walker');
+const { formatBytes } = require('./scan');
+
+/** In-memory scan job (single active job). */
+const job = {
+  id: null,
+  status: 'idle', // idle | running | done | error | cancelled
+  mode: null, // drive | path
+  target: null,
+  scannedBytes: 0,
+  totalBytes: 0,
+  percent: 0,
+  currentPath: '',
+  breadcrumb: '',
+  fileCount: 0,
+  dirCount: 0,
+  error: null,
+  result: null,
+  startedAt: null,
+  finishedAt: null,
+  _cancel: false,
+  _seq: 0,
+};
+
+function snapshot() {
+  return {
+    id: job.id,
+    status: job.status,
+    mode: job.mode,
+    target: job.target,
+    scannedBytes: job.scannedBytes,
+    totalBytes: job.totalBytes,
+    percent: job.percent,
+    scannedLabel: formatBytes(job.scannedBytes),
+    totalLabel: job.totalBytes ? formatBytes(job.totalBytes) : '—',
+    currentPath: job.currentPath,
+    breadcrumb: job.breadcrumb,
+    fileCount: job.fileCount,
+    dirCount: job.dirCount,
+    error: job.error,
+    startedAt: job.startedAt,
+    finishedAt: job.finishedAt,
+    hasResult: !!job.result,
+  };
+}
+
+function getResult() {
+  return job.result;
+}
+
+function cancelJob() {
+  if (job.status === 'running') {
+    job._cancel = true;
+    return { ok: true, message: '取消请求已发送' };
+  }
+  return { ok: false, message: '当前没有运行中的扫描' };
+}
+
+async function startJob({ drive, targetPath, includeHotspots = true } = {}) {
+  if (job.status === 'running') {
+    const err = new Error('已有扫描在进行中，请先取消或等待完成');
+    err.code = 'BUSY';
+    throw err;
+  }
+
+  job._seq += 1;
+  const id = `scan-${Date.now()}-${job._seq}`;
+  job.id = id;
+  job.status = 'running';
+  job.mode = targetPath ? 'path' : 'drive';
+  job.target = targetPath || `${String(drive || 'C').replace(/:\\?$/, '')}:\\`;
+  job.scannedBytes = 0;
+  job.totalBytes = 0;
+  job.percent = 0;
+  job.currentPath = job.target;
+  job.breadcrumb = '';
+  job.fileCount = 0;
+  job.dirCount = 0;
+  job.error = null;
+  job.result = null;
+  job.startedAt = new Date().toISOString();
+  job.finishedAt = null;
+  job._cancel = false;
+
+  // Fire and forget
+  setImmediate(() => runJob(id, { drive, targetPath, includeHotspots }));
+
+  return snapshot();
+}
+
+async function runJob(id, { drive, targetPath, includeHotspots }) {
+  try {
+    const drives = await scan.listDrives();
+    let absTarget;
+    let totalEstimate = 0;
+    let driveInfo = null;
+
+    if (targetPath) {
+      absTarget = path.resolve(String(targetPath));
+      // Try match drive for estimate
+      const letter = /^([A-Za-z]):/.exec(absTarget);
+      if (letter) {
+        driveInfo = drives.find((d) => d.name && d.name.toUpperCase() === letter[1].toUpperCase());
+        // For subpath, we don't know size; leave estimate 0 (UI shows bytes scanned)
+        totalEstimate = 0;
+      }
+    } else {
+      const letter = String(drive || 'C').replace(/:\\?$/, '').toUpperCase();
+      driveInfo = drives.find((d) => d.name && d.name.toUpperCase() === letter) || null;
+      absTarget = driveInfo ? driveInfo.root : `${letter}:\\`;
+      totalEstimate = driveInfo && driveInfo.used ? Number(driveInfo.used) : 0;
+    }
+
+    job.target = absTarget;
+    job.totalBytes = totalEstimate;
+
+    const rankingRaw = await walkRank(absTarget, {
+      totalBytesEstimate: totalEstimate,
+      progressMinIntervalMs: 120,
+      progressMinBytes: 4 * 1024 * 1024,
+      shouldCancel: () => job._cancel || job.id !== id,
+      onProgress: (p) => {
+        if (job.id !== id) return;
+        job.scannedBytes = p.scannedBytes;
+        if (totalEstimate > 0) {
+          job.totalBytes = totalEstimate;
+          job.percent = p.percent;
+        } else {
+          job.totalBytes = p.scannedBytes;
+          job.percent = 0;
+        }
+        job.currentPath = p.currentPath;
+        job.breadcrumb = p.breadcrumb;
+        job.fileCount = p.fileCount;
+        job.dirCount = p.dirCount;
+      },
+    });
+
+    if (job.id !== id) return;
+
+    if (rankingRaw.cancelled || job._cancel) {
+      job.status = 'cancelled';
+      job.finishedAt = new Date().toISOString();
+      job.percent = job.totalBytes
+        ? Math.min(100, Math.round((job.scannedBytes / job.totalBytes) * 1000) / 10)
+        : 0;
+      job.result = {
+        cancelled: true,
+        scannedAt: job.finishedAt,
+        drive: driveInfo,
+        drives,
+        rootRanking: {
+          path: rankingRaw.path,
+          total: rankingRaw.total,
+          totalLabel: formatBytes(rankingRaw.total),
+          children: (rankingRaw.children || []).map((c) => ({
+            name: c.name,
+            path: c.path,
+            isDir: c.isDir,
+            size: c.size,
+            sizeLabel: formatBytes(c.size),
+          })),
+          partial: true,
+        },
+        hotspots: null,
+      };
+      return;
+    }
+
+    // Finalize ranking labels
+    const ranking = {
+      path: rankingRaw.path,
+      total: rankingRaw.total,
+      totalLabel: formatBytes(rankingRaw.total),
+      children: (rankingRaw.children || []).map((c) => ({
+        name: c.name,
+        path: c.path,
+        isDir: !!c.isDir,
+        size: c.size,
+        sizeLabel: formatBytes(c.size),
+      })),
+      fileCount: rankingRaw.fileCount,
+      dirCount: rankingRaw.dirCount,
+      scannedAt: new Date().toISOString(),
+    };
+
+    // Hotspots after ranking (still cancellable between items)
+    let hotspots = null;
+    if (includeHotspots && !targetPath) {
+      job.currentPath = '热点规则测量中…';
+      job.breadcrumb = 'hotspots';
+      // Skip suggest-only giants (AppData/.android/…) — already visible in ranking
+      hotspots = await scan.measureHotspotsNode({
+        includeSuggestOnly: false,
+        shouldCancel: () => job._cancel || job.id !== id,
+        onItem: (label) => {
+          job.currentPath = label;
+        },
+      });
+    }
+
+    if (job.id !== id) return;
+
+    if (job._cancel) {
+      job.status = 'cancelled';
+    } else {
+      job.status = 'done';
+      job.percent = 100;
+    }
+    job.finishedAt = new Date().toISOString();
+    job.scannedBytes = rankingRaw.scannedBytes || rankingRaw.total;
+    job.result = {
+      scannedAt: job.finishedAt,
+      drive: driveInfo,
+      drives,
+      rootRanking: ranking,
+      hotspots,
+      mode: targetPath ? 'path' : 'drive',
+    };
+  } catch (err) {
+    if (job.id !== id) return;
+    job.status = 'error';
+    job.error = String(err.message || err);
+    job.finishedAt = new Date().toISOString();
+  }
+}
+
+module.exports = {
+  snapshot,
+  getResult,
+  cancelJob,
+  startJob,
+  getJob: () => job,
+};

@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>t-DiskPilot</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>t-DiskPilot</h1>
+      <span class="sub">通用磁盘空间工具 · 扫描 / 清理 / 优化 / 建议</span>
+      <span class="badge" id="healthBadge">连接中…</span>
+    </header>
+
+    <nav class="tabs" id="tabs">
+      <button class="tab active" data-tab="scan">扫描</button>
+      <button class="tab" data-tab="clean">清理</button>
+      <button class="tab" data-tab="optimize">优化</button>
+      <button class="tab" data-tab="suggest">建议</button>
+      <button class="tab" data-tab="quarantine">隔离区</button>
+    </nav>
+
+    <!-- SCAN -->
+    <section id="tab-scan" class="tab-panel">
+      <div class="panel">
+        <h2>磁盘容量</h2>
+        <div class="row">
+          <label>盘符</label>
+          <select id="driveSelect"></select>
+          <button class="btn" id="btnScanDrive">扫描盘符</button>
+          <button class="btn secondary" id="btnScanHotspots">仅热点</button>
+          <button class="btn danger" id="btnCancelScan" disabled>取消扫描</button>
+        </div>
+        <div class="row">
+          <label>任意路径</label>
+          <input type="text" id="pathInput" placeholder="例如 D:\资料 或 C:\Users\你的用户名" />
+          <button class="btn secondary" id="btnScanPath">扫描路径</button>
+        </div>
+        <div class="grid" id="driveCards"></div>
+      </div>
+
+      <div class="panel" id="scanProgressPanel">
+        <h2>扫描进度</h2>
+        <div class="progress-meta">
+          <span id="scanStatusText" class="muted">空闲</span>
+          <span id="scanPercentText" class="mono">0%</span>
+        </div>
+        <div class="progress-bar"><i id="scanProgressBar" style="width:0%"></i></div>
+        <div class="progress-bytes muted" id="scanBytesText">已扫描 — / —</div>
+        <div class="breadcrumb mono" id="scanBreadcrumb" title="">—</div>
+        <div class="current-path mono" id="scanCurrentPath" title="">当前位置：—</div>
+      </div>
+
+      <div class="panel">
+        <h2>目录排行</h2>
+        <div id="rankingWrap" class="muted">尚未扫描</div>
+      </div>
+      <div class="panel">
+        <h2>热点规则</h2>
+        <div id="hotspotWrap" class="muted">尚未扫描</div>
+      </div>
+    </section>
+
+    <!-- CLEAN -->
+    <section id="tab-clean" class="tab-panel hidden">
+      <div class="panel">
+        <h2>清理清单（逐条勾选）</h2>
+        <p class="muted">低风险项确认后可直接删除；其余先移入隔离区。默认不会自动执行。</p>
+        <div class="row">
+          <button class="btn secondary" id="btnRefreshClean">刷新大小</button>
+          <button class="btn secondary" id="btnSelectAllClean">全选可用</button>
+          <button class="btn secondary" id="btnClearClean">清空勾选</button>
+        </div>
+        <div id="cleanList"></div>
+        <div class="actions-bar">
+          <button class="btn" id="btnDryClean">预演（dry-run）</button>
+          <button class="btn ok" id="btnConfirmClean">确认执行所选…</button>
+          <span class="muted" id="cleanSelCount">已选 0 项</span>
+        </div>
+        <div class="confirm-box" id="cleanConfirm">
+          <p>将<strong>真实执行</strong>勾选的清理项。请在下方输入 <code>CONFIRM</code> 后点执行。</p>
+          <div class="row">
+            <input type="text" id="cleanConfirmInput" placeholder="CONFIRM" autocomplete="off" />
+            <button class="btn danger" id="btnDoClean">执行清理</button>
+            <button class="btn secondary" id="btnCancelClean">取消</button>
+          </div>
+        </div>
+        <pre class="log" id="cleanLog"></pre>
+      </div>
+    </section>
+
+    <!-- OPTIMIZE -->
+    <section id="tab-optimize" class="tab-panel hidden">
+      <div class="panel">
+        <h2>优化清单（逐条勾选）</h2>
+        <p class="muted">包含传递优化缓存、缩略图、回收站、存储感知等。更改前需确认。</p>
+        <div class="row">
+          <button class="btn secondary" id="btnRefreshOpt">刷新</button>
+        </div>
+        <div id="optList"></div>
+        <div class="actions-bar">
+          <button class="btn" id="btnDryOpt">预演（dry-run）</button>
+          <button class="btn ok" id="btnConfirmOpt">确认执行所选…</button>
+        </div>
+        <div class="confirm-box" id="optConfirm">
+          <p>输入 <code>CONFIRM</code> 后真实执行优化项。</p>
+          <div class="row">
+            <input type="text" id="optConfirmInput" placeholder="CONFIRM" autocomplete="off" />
+            <button class="btn danger" id="btnDoOpt">执行优化</button>
+            <button class="btn secondary" id="btnCancelOpt">取消</button>
+          </div>
+        </div>
+        <pre class="log" id="optLog"></pre>
+      </div>
+    </section>
+
+    <!-- SUGGEST -->
+    <section id="tab-suggest" class="tab-panel hidden">
+      <div class="panel">
+        <h2>建议（可含路径迁移，非仅删除）</h2>
+        <p class="muted">例如把 Pip 缓存改到 D 盘。应用环境变量/配置更改仍需确认。</p>
+        <div class="row">
+          <button class="btn secondary" id="btnRefreshSug">刷新</button>
+        </div>
+        <div id="sugList"></div>
+        <pre class="log" id="sugLog"></pre>
+      </div>
+    </section>
+
+    <!-- QUARANTINE -->
+    <section id="tab-quarantine" class="tab-panel hidden">
+      <div class="panel">
+        <h2>隔离区</h2>
+        <p class="muted">风险不明的清理会先移到这里。测试确认后可永久删除或还原。</p>
+        <p>路径：<span class="mono" id="qRoot">—</span></p>
+        <div class="row">
+          <button class="btn secondary" id="btnRefreshQ">刷新</button>
+        </div>
+        <div id="qList"></div>
+        <pre class="log" id="qLog"></pre>
+      </div>
+    </section>
+
+    <p class="footer-note">
+      t-DiskPilot 不会在未确认时删除或改配置。操作日志写在项目 <code>logs/</code> 目录。
+    </p>
+  </div>
+  <script src="/app.js"></script>
+</body>
+</html>

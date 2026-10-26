@@ -1,0 +1,17 @@
+{
+  "name": "t-diskpilot",
+  "version": "1.1.0",
+  "description": "t-DiskPilot \u2014 general-purpose disk space tool (scan / clean / optimize / suggest)",
+  "main": "server/index.js",
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node server/index.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "cors": "^2.8.5"
+  }
+}

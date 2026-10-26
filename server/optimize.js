@@ -1,0 +1,228 @@
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const { execFile } = require('child_process');
+const { promisify } = require('util');
+const execFileAsync = promisify(execFile);
+const logger = require('./logger');
+const { formatBytes, dirSizeBytes } = require('./scan');
+
+const HOME = os.homedir();
+const localApp = process.env.LOCALAPPDATA || path.join(HOME, 'AppData', 'Local');
+const WINDIR = process.env.WINDIR || 'C:\\Windows';
+
+function optimizeCatalog() {
+  return [
+    {
+      id: 'opt-delivery-cache',
+      label: '清理传递优化 (Delivery Optimization) 缓存',
+      description: '删除 Windows 传递优化缓存文件，不影响已安装更新',
+      path: path.join(WINDIR, 'SoftwareDistribution', 'DeliveryOptimization', 'Cache'),
+      risk: 'medium',
+      mode: 'direct-after-confirm',
+      action: 'empty-dir',
+      notes: '需确认；部分文件可能被系统占用而跳过',
+    },
+    {
+      id: 'opt-storage-sense-info',
+      label: '查看 / 开启存储感知建议',
+      description: '检测存储感知状态；真正改系统设置需你确认后执行注册表/设置变更',
+      path: null,
+      risk: 'low',
+      mode: 'info-then-optional-apply',
+      action: 'storage-sense-status',
+      notes: '默认只报告状态；勾选并确认后才写入启用建议',
+    },
+    {
+      id: 'opt-recycle-bin-info',
+      label: '清空回收站（需确认）',
+      description: '清空当前用户回收站',
+      path: null,
+      risk: 'medium',
+      mode: 'direct-after-confirm',
+      action: 'empty-recycle-bin',
+      notes: '不可进隔离区；确认后直接清空',
+    },
+    {
+      id: 'opt-thumbnail-cache',
+      label: '清理缩略图缓存',
+      description: '删除 Explorer 缩略图缓存（会自动重建）',
+      path: path.join(localApp, 'Microsoft', 'Windows', 'Explorer'),
+      risk: 'low',
+      mode: 'direct-after-confirm',
+      action: 'delete-thumbcache',
+      notes: '仅删除 thumbcache_*.db',
+    },
+  ].map((x) => ({ ...x, checked: false }));
+}
+
+async function storageSenseStatus() {
+  if (process.platform !== 'win32') return { supported: false };
+  const ps = `
+$ErrorActionPreference = 'SilentlyContinue'
+$path = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\StorageSense\\Parameters\\StoragePolicy'
+if (-not (Test-Path $path)) {
+  [PSCustomObject]@{ Exists = $false; Enabled = $null } | ConvertTo-Json -Compress
+} else {
+  $en = (Get-ItemProperty -Path $path -Name '01' -ErrorAction SilentlyContinue).'01'
+  [PSCustomObject]@{ Exists = $true; Enabled = $en } | ConvertTo-Json -Compress
+}
+`;
+  try {
+    const { stdout } = await execFileAsync(
+      'powershell.exe',
+      ['-NoProfile', '-Command', ps],
+      { encoding: 'utf8', windowsHide: true }
+    );
+    return { supported: true, ...JSON.parse(stdout || '{}') };
+  } catch (err) {
+    return { supported: true, error: String(err.message || err) };
+  }
+}
+
+async function buildChecklist() {
+  const items = optimizeCatalog();
+  const out = [];
+  for (const item of items) {
+    let size = 0;
+    let exists = true;
+    let extra = {};
+    if (item.path) {
+      exists = fs.existsSync(item.path);
+      if (exists && item.action === 'empty-dir') size = await dirSizeBytes(item.path);
+      if (exists && item.action === 'delete-thumbcache') {
+        try {
+          const files = fs.readdirSync(item.path).filter((f) => /^thumbcache_.*\.db$/i.test(f));
+          for (const f of files) {
+            try {
+              size += fs.statSync(path.join(item.path, f)).size;
+            } catch (_) {
+              /* ignore */
+            }
+          }
+          extra.files = files.length;
+        } catch (_) {
+          /* ignore */
+        }
+      }
+    }
+    if (item.action === 'storage-sense-status') {
+      extra.status = await storageSenseStatus();
+    }
+    out.push({
+      ...item,
+      exists,
+      size,
+      sizeLabel: formatBytes(size),
+      selectable: item.action === 'storage-sense-status' || item.action === 'empty-recycle-bin' || (exists && (size > 0 || item.action !== 'empty-dir')),
+      extra,
+    });
+  }
+  return out;
+}
+
+async function emptyDirSafe(dirPath, { dryRun }) {
+  if (!fs.existsSync(dirPath)) return { deleted: 0, skipped: 0, dryRun };
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true });
+  let deleted = 0;
+  let skipped = 0;
+  const errors = [];
+  for (const ent of entries) {
+    const full = path.join(dirPath, ent.name);
+    try {
+      if (dryRun) {
+        deleted += 1;
+        continue;
+      }
+      fs.rmSync(full, { recursive: true, force: true });
+      deleted += 1;
+    } catch (err) {
+      skipped += 1;
+      errors.push(String(err.message || err));
+    }
+  }
+  return { deleted, skipped, dryRun, errors };
+}
+
+async function executeOptimize({ ids = [], dryRun = true, confirmToken } = {}) {
+  if (!dryRun && confirmToken !== 'CONFIRM') {
+    const err = new Error('需要 confirmToken === "CONFIRM" 才能真实执行');
+    err.code = 'NEED_CONFIRM';
+    throw err;
+  }
+  const catalog = optimizeCatalog();
+  const byId = new Map(catalog.map((c) => [c.id, c]));
+  const results = [];
+
+  for (const id of ids) {
+    const item = byId.get(id);
+    if (!item) {
+      results.push({ id, ok: false, error: '未知项目' });
+      continue;
+    }
+    try {
+      let detail = {};
+      if (item.action === 'empty-dir') {
+        detail = await emptyDirSafe(item.path, { dryRun });
+      } else if (item.action === 'delete-thumbcache') {
+        const dir = item.path;
+        const files = fs.existsSync(dir)
+          ? fs.readdirSync(dir).filter((f) => /^thumbcache_.*\.db$/i.test(f))
+          : [];
+        if (!dryRun) {
+          for (const f of files) {
+            try {
+              fs.unlinkSync(path.join(dir, f));
+            } catch (_) {
+              /* skip locked */
+            }
+          }
+        }
+        detail = { files: files.length, dryRun };
+      } else if (item.action === 'empty-recycle-bin') {
+        if (dryRun) {
+          detail = { dryRun: true, would: 'Clear-RecycleBin' };
+        } else {
+          await execFileAsync(
+            'powershell.exe',
+            ['-NoProfile', '-Command', 'Clear-RecycleBin -Force -ErrorAction SilentlyContinue'],
+            { windowsHide: true }
+          );
+          detail = { dryRun: false, cleared: true };
+        }
+      } else if (item.action === 'storage-sense-status') {
+        const status = await storageSenseStatus();
+        if (dryRun) {
+          detail = { dryRun: true, status, note: '确认后可写入启用存储感知 (HKCU StoragePolicy 01=1)' };
+        } else {
+          // Apply enable Storage Sense for current user
+          const ps = `
+$ErrorActionPreference = 'Stop'
+$path = 'HKCU:\\Software\\Microsoft\\Windows\\CurrentVersion\\StorageSense\\Parameters\\StoragePolicy'
+New-Item -Path $path -Force | Out-Null
+New-ItemProperty -Path $path -Name '01' -Value 1 -PropertyType DWord -Force | Out-Null
+`;
+          await execFileAsync('powershell.exe', ['-NoProfile', '-Command', ps], { windowsHide: true });
+          detail = { dryRun: false, applied: true, statusBefore: status };
+        }
+      } else {
+        detail = { skipped: true, reason: '未实现的 action' };
+      }
+      logger.info('optimize execute', { id, dryRun, detail });
+      results.push({ id, ok: true, label: item.label, detail });
+    } catch (err) {
+      logger.error('optimize failed', { id, error: String(err.message || err) });
+      results.push({ id, ok: false, error: String(err.message || err) });
+    }
+  }
+  return { dryRun, results, at: new Date().toISOString() };
+}
+
+module.exports = {
+  optimizeCatalog,
+  buildChecklist,
+  executeOptimize,
+  storageSenseStatus,
+};
